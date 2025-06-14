@@ -16,7 +16,7 @@ HEADERS = {
 
 #region --- Data Extraction Functions ---
 
-def extract_tournament_date(tournament_id: int, headers: dict) -> str | None: # <<< MODIFIED
+def extract_tournament_date(tournament_id: int, headers: dict) -> str | None:
     """
     Extracts the date of the tournament from its main info page.
     """
@@ -29,7 +29,7 @@ def extract_tournament_date(tournament_id: int, headers: dict) -> str | None: # 
         "lokakuuta": "10", "marraskuuta": "11", "joulukuuta": "12"
     }
     try:
-        response = requests.get(url, headers=headers) # <<< MODIFIED
+        response = requests.get(url, headers=headers)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         span_tag = soup.find("span", class_="fw-bold", string="Päivä")
@@ -53,33 +53,50 @@ def extract_tournament_date(tournament_id: int, headers: dict) -> str | None: # 
         logging.error(f"Failed to extract or validate tournament date: {e}")
         return None
 
-def extract_match_data(url: str, headers: dict) -> list: # <<< MODIFIED
+def extract_match_data(url: str, headers: dict) -> list:
+    """
+    Extracts player names and scores, omitting any matches with a forfeited player (name prefixed with "FF").
+    """
     logging.info(f"Fetching match data from {url}...")
     try:
-        response = requests.get(url, headers=headers) # <<< MODIFIED
+        response = requests.get(url, headers=headers)
         logging.info(f"HTTP Response for {response.url}: Status {response.status_code}, Content-Length: {len(response.content)}")
         response.raise_for_status()
+        
         soup = BeautifulSoup(response.text, 'html.parser')
+        
         match_containers = soup.find_all('td', class_='text-md-end')
+        
         if not match_containers:
             logging.warning("Could not find any match container cells ('<td class=\"text-md-end\">').")
             return []
+
         logging.info(f"Found {len(match_containers)} potential match containers. Processing for completed matches...")
         extracted_data = []
+        
         for container in match_containers:
             home_name_div = container.find('div', class_='home-name')
             away_name_div = container.find('div', class_='away-name')
             home_score_div = container.find('div', class_=re.compile(r'^home-score'))
             away_score_div = container.find('div', class_=re.compile(r'^away-score'))
+
             if home_name_div and away_name_div and home_score_div and away_score_div:
                 player1_full_name = home_name_div.get_text(strip=True)
                 player2_full_name = away_name_div.get_text(strip=True)
+
                 player1 = player1_full_name.split('(')[0].strip()
                 player2 = player2_full_name.split('(')[0].strip()
+
                 score1 = home_score_div.get_text(strip=True)
                 score2 = away_score_div.get_text(strip=True)
+
                 if player1 and player2 and score1 and score2:
-                    extracted_data.append({'player1': player1, 'player2': player2, 'score': f"{score1} - {score2}"})
+                    extracted_data.append({
+                        'player1': player1,
+                        'player2': player2,
+                        'score': f"{score1} - {score2}"
+                    })
+        
         logging.info(f"Successfully extracted {len(extracted_data)} completed matches.")
         return extracted_data
     except requests.exceptions.RequestException as e:
@@ -89,34 +106,47 @@ def extract_match_data(url: str, headers: dict) -> list: # <<< MODIFIED
         logging.error(f"An unexpected error occurred in extract_match_data: {e}")
         return []
 
-def extract_final_standings(url: str, headers: dict, top_n: int = 4) -> list: # <<< MODIFIED
+def extract_final_standings(url: str, headers: dict, top_n: int = 4) -> list:
+    """
+    Extracts the top N final standings, omitting any forfeited players.
+    """
     logging.info(f"Fetching final standings from {url}...")
     standings = []
     try:
-        response = requests.get(url, headers=headers) # <<< MODIFIED
+        response = requests.get(url, headers=headers)
         logging.info(f"HTTP Response for {response.url}: Status {response.status_code}, Content-Length: {len(response.content)}")
         response.raise_for_status()
+        
         soup = BeautifulSoup(response.text, 'html.parser')
         rank_texts = soup.find_all(string=re.compile(r"^\d+\.$"))
+
         if not rank_texts:
             logging.warning("Could not find any text matching the rank pattern (e.g., '1.').")
             return []
+
         logging.info(f"Found {len(rank_texts)} potential rank strings. Extracting top {top_n} players.")
+
         for rank_text in rank_texts:
-            if len(standings) >= top_n: break
+            if len(standings) >= top_n:
+                break
             rank_element = rank_text.parent
             player_div = rank_element.find_next_sibling('div')
+
             if player_div:
                 rank = rank_text.strip()
                 player_name = player_div.get_text(strip=True)
+                
                 if player_name.strip().startswith('FF '):
                     logging.info(f"Omitting forfeited player from standings: {player_name}")
                     continue
+
                 if player_name:
                     standings.append({'rank': rank, 'player': player_name})
             else:
                 logging.warning(f"Found rank text '{rank_text.strip()}' but could not find a player div immediately after it.")
+        
         return standings
+        
     except requests.exceptions.RequestException as e:
         logging.error(f"An error occurred during the HTTP request: {e}")
         return []
@@ -126,28 +156,37 @@ def extract_final_standings(url: str, headers: dict, top_n: int = 4) -> list: # 
 #endregion
 
 #region --- Data Processing and Export Functions ---
-# (These functions do not make web requests and remain unchanged)
+
 def calculate_win_counts(matches: list) -> dict:
+    """
+    Calculates the number of wins for each player, including wins by forfeit.
+    """
     win_counts = {}
     logging.info("Calculating win counts from bracket data...")
     for match in matches:
         try:
             p1_name = match['player1']
             p2_name = match['player2']
+            
+            # This logic was added in the previous step and is now used
             if p1_name.strip().startswith('FF '):
                 winner = p2_name
-                if winner.upper() != 'WO': win_counts[winner] = win_counts.get(winner, 0) + 1
+                if winner.upper() != 'WO':
+                    win_counts[winner] = win_counts.get(winner, 0) + 1
                 continue
             if p2_name.strip().startswith('FF '):
                 winner = p1_name
-                if winner.upper() != 'WO': win_counts[winner] = win_counts.get(winner, 0) + 1
+                if winner.upper() != 'WO':
+                    win_counts[winner] = win_counts.get(winner, 0) + 1
                 continue
+
             score_parts = match['score'].split('-')
             if len(score_parts) != 2: continue
             score1, score2 = int(score_parts[0].strip()), int(score_parts[1].strip())
             winner = None
             if score1 > score2: winner = p1_name
             elif score2 > score1: winner = p2_name
+            
             if winner and winner.upper() != 'WO':
                 win_counts[winner] = win_counts.get(winner, 0) + 1
         except (ValueError, IndexError):
@@ -155,18 +194,26 @@ def calculate_win_counts(matches: list) -> dict:
     return win_counts
 
 def calculate_tournament_points(matches: list, win_counts: dict, standings: list) -> list:
+    """
+    Calculates a detailed breakdown of points for each player for a single tournament.
+    """
     logging.info("Calculating detailed points breakdown for the current tournament...")
     all_players = set()
     for match in matches:
         p1 = match['player1']
         p2 = match['player2']
-        if p1.upper() != 'WO' and not p1.strip().startswith('FF '): all_players.add(p1)
-        if p2.upper() != 'WO' and not p2.strip().startswith('FF '): all_players.add(p2)
+        if p1.upper() != 'WO' and not p1.strip().startswith('FF '):
+            all_players.add(p1)
+        if p2.upper() != 'WO' and not p2.strip().startswith('FF '):
+            all_players.add(p2)
+
     processed_data = []
     for player in all_players:
         participation_points = 30
+        
         wins = win_counts.get(player, 0)
         match_win_points = wins * 5
+        
         top_player_points = 0
         for standing in standings:
             if standing['player'] == player:
@@ -174,7 +221,9 @@ def calculate_tournament_points(matches: list, win_counts: dict, standings: list
                 elif standing['rank'] == '2.': top_player_points = 3
                 elif standing['rank'] == '3.': top_player_points = 4
                 break
+                
         final_points = participation_points + match_win_points + top_player_points
+        
         processed_data.append({
             'Player': player,
             'Number of Wins': wins,
@@ -185,34 +234,46 @@ def calculate_tournament_points(matches: list, win_counts: dict, standings: list
     return processed_data
 
 def save_tournament_csv(tournament_points: list, final_standings: list, filename: str):
+    """
+    Saves a detailed, multi-section report for a single tournament to its own CSV.
+    """
     logging.info(f"Saving detailed tournament report to {filename}...")
     try:
         if not tournament_points:
             logging.warning("No tournament points to save.")
             return
+
         headers = ['Player', 'Number of Wins', 'Points from Wins', 'Points from Ranking', 'Total Points']
         sorted_data = sorted(tournament_points, key=lambda x: x['Total Points'], reverse=True)
+        
         with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
+            
             writer.writerow(['Top 4 Finishers'])
             if final_standings:
                 for standing in final_standings:
                     writer.writerow([f"Rank {standing['rank']}", standing['player']])
             else:
                 writer.writerow(['N/A'])
+
             writer.writerow([])
             writer.writerow(['Player Point Breakdown'])
+            
             dict_writer = csv.DictWriter(csvfile, fieldnames=headers)
             dict_writer.writeheader()
             dict_writer.writerows(sorted_data)
+            
         logging.info(f"Successfully saved detailed report to {filename}.")
     except Exception as e:
         logging.error(f"Error writing detailed tournament CSV to file: {e}")
 
 def update_total_points_csv(tournament_date: str, tournament_points: list, filename="total_points.csv"):
+    """
+    Creates or updates a master CSV with points from all tournaments and adds ranking.
+    """
     logging.info(f"Updating cross-tournament leaderboard file: {filename}")
+    
     current_column_header = tournament_date
-    # Prepare data, using only Player and Total Points for the leaderboard
     leaderboard_data = [{'Player': p['Player'], 'Total Points': p['Total Points']} for p in tournament_points]
     current_df = pd.DataFrame(leaderboard_data)
 
@@ -220,12 +281,14 @@ def update_total_points_csv(tournament_date: str, tournament_points: list, filen
         logging.warning("Current tournament data is empty. Cannot update total points.")
         return
     current_df = current_df.rename(columns={'Total Points': current_column_header})
+    
     if os.path.exists(filename):
         try:
             existing_headers_df = pd.read_csv(filename, nrows=0, skiprows=1)
             if current_column_header in existing_headers_df.columns:
                 logging.warning(f"Tournament date {tournament_date} already exists in {filename}. Skipping update.")
                 return
+            
             total_df = pd.read_csv(filename, skiprows=1)
             total_df = pd.merge(total_df, current_df, on='Player', how='outer')
         except Exception as e:
@@ -233,12 +296,16 @@ def update_total_points_csv(tournament_date: str, tournament_points: list, filen
             return
     else:
         total_df = current_df
+
     total_df = total_df.fillna(0)
+    
     fixed_cols = ['Player', 'Rank', 'Total Points']
     date_columns = []
     legacy_id_columns = []
+    
     for col in total_df.columns:
-        if col in fixed_cols: continue
+        if col in fixed_cols:
+            continue
         try:
             datetime.strptime(col, '%d.%m.%Y')
             date_columns.append(col)
@@ -246,17 +313,23 @@ def update_total_points_csv(tournament_date: str, tournament_points: list, filen
             if str(col).isdigit():
                 legacy_id_columns.append(col)
                 logging.warning(f"Found legacy tournament ID column '{col}'. It will be included in totals but removed from the final file.")
+
     all_score_columns = date_columns + legacy_id_columns
     for col in all_score_columns:
         total_df[col] = total_df[col].astype(int)
+        
     total_df['Total Points'] = total_df[all_score_columns].sum(axis=1).astype(int)
+    
     total_df = total_df.sort_values(by='Total Points', ascending=False)
+    
     if 'Rank' in total_df.columns:
         total_df = total_df.drop(columns=['Rank'])
     total_df.insert(0, 'Rank', range(1, 1 + len(total_df)))
+    
     sorted_date_columns = sorted(date_columns, key=lambda d: datetime.strptime(d, '%d.%m.%Y'))
     final_cols = ['Rank', 'Player'] + sorted_date_columns + ['Total Points']
     total_df = total_df[final_cols]
+    
     try:
         timestamp = f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         with open(filename, 'w', newline='') as f:
@@ -265,6 +338,7 @@ def update_total_points_csv(tournament_date: str, tournament_points: list, filen
         logging.info(f"Successfully updated and cleaned leaderboard file: {filename}")
     except Exception as e:
         logging.error(f"Could not write to leaderboard file {filename}. Error: {e}")
+
 #endregion
 
 def main():
@@ -278,7 +352,7 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     
-    # Pass HEADERS to the function <<< MODIFIED
+    # --- FIXED ---
     tournament_date = extract_tournament_date(tournament_id, headers=HEADERS)
     if not tournament_date:
         logging.error(f"Could not determine tournament date for ID {tournament_id}. Aborting script.")
@@ -290,14 +364,15 @@ def main():
     RESULTS_URL = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
     TOURNAMENT_CSV_FILENAME = f"tournament_{tournament_id}_{tournament_date.replace('.', '-')}.csv"
 
-    # Pass HEADERS to the functions <<< MODIFIED
+    # --- FIXED ---
     final_standings = extract_final_standings(RESULTS_URL, headers=HEADERS, top_n=4)
     if final_standings:
         logging.info("--- Top 4 Final Standings ---")
         for standing in final_standings:
             logging.info(f"Rank {standing['rank']:<3} {standing['player']}")
     
-    match_results = extract_match_data(BRACKET_URL, headers=HEADERS) # <<< MODIFIED
+    # --- FIXED ---
+    match_results = extract_match_data(BRACKET_URL, headers=HEADERS)
     
     if match_results:
         player_wins = calculate_win_counts(match_results)
@@ -310,6 +385,7 @@ def main():
         
         if final_standings or player_wins:
             current_tournament_points = calculate_tournament_points(match_results, player_wins, final_standings)
+            
             if current_tournament_points:
                 save_tournament_csv(current_tournament_points, final_standings, TOURNAMENT_CSV_FILENAME)
                 update_total_points_csv(tournament_date, current_tournament_points)
