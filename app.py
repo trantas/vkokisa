@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import os
 import tournament_scraper # Import your custom module
 
 # --- App UI Configuration ---
@@ -13,14 +14,14 @@ st.write("Enter a tournament ID from tspool.fi to fetch data, calculate points, 
 with st.form(key='scraper_form'):
     tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1, value=848)
     # IMPORTANT: Change this to the exact name of your Google Sheet
-    google_sheet_name = st.text_input("Google Sheet Name:", value="pocket viikkokisa leaderboard")
+    google_sheet_name = st.text_input("Google Sheet Name:", value="Your Google Sheet Name Here")
     submit_button = st.form_submit_button(label='Run Scraper and Update Leaderboard')
 
 if submit_button:
     if not tournament_id or not google_sheet_name:
         st.warning("Please enter a valid Tournament ID and Google Sheet Name.")
     else:
-        with st.spinner(f"Processing tournament {tournament_id}..."):
+        with st.spinner(f"Processing tournament {tournament_id}... Please wait."):
             
             # --- 1. Extraction ---
             st.subheader(f"Step 1: Extracting Data for Tournament {tournament_id}")
@@ -36,6 +37,7 @@ if submit_button:
                 st.success(f"Found tournament date: {tournament_date}")
                 bracket_url = f"https://tspool.fi/kisa/{tournament_id}/kaavio/"
                 results_url = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
+                tournament_csv_filename = f"tournament_{tournament_id}_{tournament_date.replace('.', '-')}.csv"
 
                 final_standings = tournament_scraper.extract_final_standings(
                     results_url, 
@@ -56,12 +58,13 @@ if submit_button:
                     
                     if current_tournament_points:
                         try:
+                            # --- FIXED ---
                             # This is where the magic happens
                             tournament_scraper.update_leaderboard_sheet(
                                 tournament_date=tournament_date,
                                 tournament_points=current_tournament_points,
                                 sheet_name=google_sheet_name,
-                                creds_dict=st.secrets["gcp_service_account"]
+                                creds=st.secrets["gcp_service_account"] # Changed 'creds_dict' to 'creds'
                             )
                             st.success(f"Master leaderboard '{google_sheet_name}' updated successfully!")
 
