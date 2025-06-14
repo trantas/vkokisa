@@ -1,6 +1,6 @@
 import streamlit as st
-# Assuming your main script is now a module named 'tournament_scraper'
-import tournament_scraper 
+# Functions in module extract.py
+import extract
 import pandas as pd
 
 st.title("Tournament Data Extractor")
