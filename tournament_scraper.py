@@ -8,6 +8,7 @@ import argparse
 from datetime import datetime
 import os
 import sys
+import gspread
 
 # This remains here as a module-level constant
 HEADERS = {
@@ -267,77 +268,82 @@ def save_tournament_csv(tournament_points: list, final_standings: list, filename
     except Exception as e:
         logging.error(f"Error writing detailed tournament CSV to file: {e}")
 
-def update_total_points_csv(tournament_date: str, tournament_points: list, filename="total_points.csv"):
+def update_leaderboard_sheet(tournament_date: str, tournament_points: list, sheet_name: str, creds_dict: dict):
     """
-    Creates or updates a master CSV with points from all tournaments and adds ranking.
+    Creates or updates the master leaderboard in a Google Sheet.
     """
-    logging.info(f"Updating cross-tournament leaderboard file: {filename}")
+    logging.info(f"Connecting to Google Sheets to update '{sheet_name}'...")
     
+    try:
+        # Authenticate with Google using the credentials dictionary
+        gc = gspread.service_account_from_dict(creds_dict)
+        spreadsheet = gc.open(sheet_name)
+        worksheet = spreadsheet.sheet1 # Use the first sheet
+    except Exception as e:
+        logging.error(f"Failed to connect to Google Sheets: {e}")
+        # Re-raise the exception to be caught by the Streamlit app
+        raise
+
+    # Prepare current tournament data
     current_column_header = tournament_date
     leaderboard_data = [{'Player': p['Player'], 'Total Points': p['Total Points']} for p in tournament_points]
     current_df = pd.DataFrame(leaderboard_data)
-
-    if current_df.empty:
-        logging.warning("Current tournament data is empty. Cannot update total points.")
-        return
     current_df = current_df.rename(columns={'Total Points': current_column_header})
+
+    # Read existing data from the sheet
+    existing_records = worksheet.get_all_records()
     
-    if os.path.exists(filename):
-        try:
-            existing_headers_df = pd.read_csv(filename, nrows=0, skiprows=1)
-            if current_column_header in existing_headers_df.columns:
-                logging.warning(f"Tournament date {tournament_date} already exists in {filename}. Skipping update.")
-                return
-            
-            total_df = pd.read_csv(filename, skiprows=1)
-            total_df = pd.merge(total_df, current_df, on='Player', how='outer')
-        except Exception as e:
-            logging.error(f"Could not read existing leaderboard file {filename}. Error: {e}")
-            return
+    if existing_records:
+        total_df = pd.DataFrame(existing_records)
+        if current_column_header in total_df.columns:
+            logging.warning(f"Tournament date {tournament_date} already exists in Google Sheet. Skipping update.")
+            return # Exit the function
+        
+        # Merge old and new data
+        total_df = pd.merge(total_df, current_df, on='Player', how='outer')
     else:
+        # If the sheet is empty, the current tournament is the first entry
         total_df = current_df
 
+    # The rest of the logic is the same as before, using pandas
     total_df = total_df.fillna(0)
     
     fixed_cols = ['Player', 'Rank', 'Total Points']
-    date_columns = []
-    legacy_id_columns = []
+    # Identify score columns (dates or legacy IDs)
+    score_columns = [col for col in total_df.columns if col not in fixed_cols]
     
-    for col in total_df.columns:
-        if col in fixed_cols:
-            continue
-        try:
-            datetime.strptime(col, '%d.%m.%Y')
-            date_columns.append(col)
-        except ValueError:
-            if str(col).isdigit():
-                legacy_id_columns.append(col)
-                logging.warning(f"Found legacy tournament ID column '{col}'. It will be included in totals but removed from the final file.")
-
-    all_score_columns = date_columns + legacy_id_columns
-    for col in all_score_columns:
-        total_df[col] = total_df[col].astype(int)
+    for col in score_columns:
+        total_df[col] = pd.to_numeric(total_df[col], errors='coerce').fillna(0).astype(int)
         
-    total_df['Total Points'] = total_df[all_score_columns].sum(axis=1).astype(int)
-    
+    total_df['Total Points'] = total_df[score_columns].sum(axis=1).astype(int)
     total_df = total_df.sort_values(by='Total Points', ascending=False)
     
     if 'Rank' in total_df.columns:
         total_df = total_df.drop(columns=['Rank'])
     total_df.insert(0, 'Rank', range(1, 1 + len(total_df)))
     
+    # Filter for valid date columns to sort them for the final output
+    date_columns = []
+    for col in score_columns:
+        try:
+            datetime.strptime(col, '%d.%m.%Y')
+            date_columns.append(col)
+        except ValueError:
+            continue
+            
     sorted_date_columns = sorted(date_columns, key=lambda d: datetime.strptime(d, '%d.%m.%Y'))
     final_cols = ['Rank', 'Player'] + sorted_date_columns + ['Total Points']
     total_df = total_df[final_cols]
-    
+
+    # Write the updated DataFrame back to the Google Sheet
     try:
-        timestamp = f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        with open(filename, 'w', newline='') as f:
-            f.write(timestamp + '\n')
-        total_df.to_csv(filename, mode='a', index=False)
-        logging.info(f"Successfully updated and cleaned leaderboard file: {filename}")
+        worksheet.clear()
+        # Convert dataframe to list of lists to write to sheet
+        worksheet.update([total_df.columns.values.tolist()] + total_df.values.tolist())
+        logging.info(f"Successfully updated Google Sheet '{sheet_name}'.")
     except Exception as e:
-        logging.error(f"Could not write to leaderboard file {filename}. Error: {e}")
+        logging.error(f"Could not write to Google Sheet '{sheet_name}'. Error: {e}")
+        raise
 
 #endregion
 
@@ -388,7 +394,6 @@ def main():
             
             if current_tournament_points:
                 save_tournament_csv(current_tournament_points, final_standings, TOURNAMENT_CSV_FILENAME)
-                update_total_points_csv(tournament_date, current_tournament_points)
             else:
                 logging.warning("No player points were calculated for this tournament.")
     else:
