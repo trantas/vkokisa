@@ -211,20 +211,30 @@ def update_leaderboard_sheet(tournament_date: str, tournament_points: list, shee
     Creates or updates the master leaderboard in a Google Sheet.
     Now robustly handles credentials passed as a JSON string.
     """
-    logging.info(f"Connecting to Google Sheets to update '{sheet_name}'...")
+    if not creds:
+        logging.error("Credentials passed to update_leaderboard_sheet were empty or None.")
+        raise ValueError("Credentials not provided. Please check your Streamlit Secrets configuration.")
+
+    logging.info(f"Received credentials of type: {type(creds)}")
     
     try:
-        # If the credentials from st.secrets are a string, parse them from JSON.
         if isinstance(creds, str):
+            logging.info("Credentials passed as a string. Attempting to parse JSON.")
+            if len(creds) < 100: # Basic sanity check for a non-trivial JSON string
+                 logging.error(f"Received credentials string is too short to be valid JSON.")
+                 raise ValueError("Invalid credentials string. It might be empty or misconfigured.")
             credentials_dict = json.loads(creds)
         else:
-            credentials_dict = creds # Assume they are already a dictionary
+            credentials_dict = creds
             
         gc = gspread.service_account_from_dict(credentials_dict)
         spreadsheet = gc.open(sheet_name)
         worksheet = spreadsheet.sheet1
+    except json.JSONDecodeError as e:
+        logging.error(f"JSON Decode Error: Failed to parse credentials string. It is likely not valid JSON. Error: {e}")
+        raise ValueError(f"Could not parse credentials. Check formatting. Error: {e}")
     except Exception as e:
-        logging.error(f"Failed to connect to Google Sheets. Check credentials format or sheet name. Error: {e}")
+        logging.error(f"Failed to connect to Google Sheets. Check credentials, sheet name, and sharing settings. Error: {e}")
         raise
 
     leaderboard_data = [{'Player': p['Player'], 'Total Points': p['Total Points']} for p in tournament_points]
