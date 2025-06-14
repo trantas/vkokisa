@@ -9,15 +9,16 @@ from datetime import datetime
 import os
 import sys
 
-# All your functions (extract_tournament_date, extract_match_data, etc.) go here.
-# They are defined at the top level, making them importable.
-# No changes are needed to the functions themselves.
+# This remains here as a module-level constant
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+}
 
 #region --- Data Extraction Functions ---
-def extract_tournament_date(tournament_id: int) -> str | None:
+
+def extract_tournament_date(tournament_id: int, headers: dict) -> str | None: # <<< MODIFIED
     """
-    Extracts the date of the tournament from its main info page based on the
-    specific HTML structure provided by the user.
+    Extracts the date of the tournament from its main info page.
     """
     url = f"https://tspool.fi/kisa/{tournament_id}"
     logging.info(f"Fetching tournament date from {url}...")
@@ -28,7 +29,7 @@ def extract_tournament_date(tournament_id: int) -> str | None:
         "lokakuuta": "10", "marraskuuta": "11", "joulukuuta": "12"
     }
     try:
-        response = requests.get(url, headers=HEADERS)
+        response = requests.get(url, headers=headers) # <<< MODIFIED
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         span_tag = soup.find("span", class_="fw-bold", string="Päivä")
@@ -52,10 +53,10 @@ def extract_tournament_date(tournament_id: int) -> str | None:
         logging.error(f"Failed to extract or validate tournament date: {e}")
         return None
 
-def extract_match_data(url: str) -> list:
+def extract_match_data(url: str, headers: dict) -> list: # <<< MODIFIED
     logging.info(f"Fetching match data from {url}...")
     try:
-        response = requests.get(url, headers=HEADERS)
+        response = requests.get(url, headers=headers) # <<< MODIFIED
         logging.info(f"HTTP Response for {response.url}: Status {response.status_code}, Content-Length: {len(response.content)}")
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -88,11 +89,11 @@ def extract_match_data(url: str) -> list:
         logging.error(f"An unexpected error occurred in extract_match_data: {e}")
         return []
 
-def extract_final_standings(url: str, top_n: int = 4) -> list:
+def extract_final_standings(url: str, headers: dict, top_n: int = 4) -> list: # <<< MODIFIED
     logging.info(f"Fetching final standings from {url}...")
     standings = []
     try:
-        response = requests.get(url, headers=HEADERS)
+        response = requests.get(url, headers=headers) # <<< MODIFIED
         logging.info(f"HTTP Response for {response.url}: Status {response.status_code}, Content-Length: {len(response.content)}")
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -125,6 +126,7 @@ def extract_final_standings(url: str, top_n: int = 4) -> list:
 #endregion
 
 #region --- Data Processing and Export Functions ---
+# (These functions do not make web requests and remain unchanged)
 def calculate_win_counts(matches: list) -> dict:
     win_counts = {}
     logging.info("Calculating win counts from bracket data...")
@@ -210,7 +212,10 @@ def save_tournament_csv(tournament_points: list, final_standings: list, filename
 def update_total_points_csv(tournament_date: str, tournament_points: list, filename="total_points.csv"):
     logging.info(f"Updating cross-tournament leaderboard file: {filename}")
     current_column_header = tournament_date
-    current_df = pd.DataFrame(tournament_points)
+    # Prepare data, using only Player and Total Points for the leaderboard
+    leaderboard_data = [{'Player': p['Player'], 'Total Points': p['Total Points']} for p in tournament_points]
+    current_df = pd.DataFrame(leaderboard_data)
+
     if current_df.empty:
         logging.warning("Current tournament data is empty. Cannot update total points.")
         return
@@ -238,7 +243,7 @@ def update_total_points_csv(tournament_date: str, tournament_points: list, filen
             datetime.strptime(col, '%d.%m.%Y')
             date_columns.append(col)
         except ValueError:
-            if col.isdigit():
+            if str(col).isdigit():
                 legacy_id_columns.append(col)
                 logging.warning(f"Found legacy tournament ID column '{col}'. It will be included in totals but removed from the final file.")
     all_score_columns = date_columns + legacy_id_columns
@@ -262,27 +267,19 @@ def update_total_points_csv(tournament_date: str, tournament_points: list, filen
         logging.error(f"Could not write to leaderboard file {filename}. Error: {e}")
 #endregion
 
-
-# --- ADDED: Main execution logic is now in a main() function ---
 def main():
     """
     Main function to parse arguments and run the scraper logic.
     """
-    parser = argparse.ArgumentParser(
-        description="Extracts and processes tournament results from tspool.fi.",
-        epilog="Example: python tournament_scraper.py 848"
-    )
+    parser = argparse.ArgumentParser(description="Extracts and processes tournament results from tspool.fi.", epilog="Example: python tournament_scraper.py 848")
     parser.add_argument("tournament_id", type=int, help="The integer ID of the tournament (e.g., 848).")
     args = parser.parse_args()
     tournament_id = args.tournament_id
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     
-    tournament_date = extract_tournament_date(tournament_id)
+    # Pass HEADERS to the function <<< MODIFIED
+    tournament_date = extract_tournament_date(tournament_id, headers=HEADERS)
     if not tournament_date:
         logging.error(f"Could not determine tournament date for ID {tournament_id}. Aborting script.")
         sys.exit(1)
@@ -293,13 +290,14 @@ def main():
     RESULTS_URL = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
     TOURNAMENT_CSV_FILENAME = f"tournament_{tournament_id}_{tournament_date.replace('.', '-')}.csv"
 
-    final_standings = extract_final_standings(RESULTS_URL, top_n=4)
+    # Pass HEADERS to the functions <<< MODIFIED
+    final_standings = extract_final_standings(RESULTS_URL, headers=HEADERS, top_n=4)
     if final_standings:
         logging.info("--- Top 4 Final Standings ---")
         for standing in final_standings:
             logging.info(f"Rank {standing['rank']:<3} {standing['player']}")
     
-    match_results = extract_match_data(BRACKET_URL)
+    match_results = extract_match_data(BRACKET_URL, headers=HEADERS) # <<< MODIFIED
     
     if match_results:
         player_wins = calculate_win_counts(match_results)
@@ -312,18 +310,13 @@ def main():
         
         if final_standings or player_wins:
             current_tournament_points = calculate_tournament_points(match_results, player_wins, final_standings)
-            
             if current_tournament_points:
                 save_tournament_csv(current_tournament_points, final_standings, TOURNAMENT_CSV_FILENAME)
-                
-                leaderboard_data = [{'Player': p['Player'], 'Final Points': p['Total Points']} for p in current_tournament_points]
-                update_total_points_csv(tournament_date, leaderboard_data)
+                update_total_points_csv(tournament_date, current_tournament_points)
             else:
                 logging.warning("No player points were calculated for this tournament.")
     else:
         logging.warning("Could not retrieve any valid match results from the bracket.")
 
-
-# This "Start Button" only gets pressed when you run the file directly.
 if __name__ == "__main__":
     main()
