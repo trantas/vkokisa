@@ -3,29 +3,48 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from st_aggrid import AgGrid, GridOptionsBuilder, JsCode  # <<< ADDED
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 import tournament_scraper # Your module
 
 # --- Page Configuration ---
+# All page settings are now in this single command at the top of the script.
 st.set_page_config(
     page_title="Pocket Viikkokisat '25",
     page_icon="🎱",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed" # This helps, but CSS below is needed to fully hide it
 )
 
 # --- Constant ---
 GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
 
+# --- Custom CSS for Styling & Hiding UI Elements ---
+CUSTOM_CSS = """
+<style>
+    /* This robustly hides the sidebar and its hamburger button */
+    [data-testid="stSidebar"] {
+        display: none;
+    }
+    [data-testid="collapsedControl"] {
+        display: none;
+    }
+    
+    /* This is the container for the data grid */
+    .ag-root-wrapper {
+        border: none !important; /* Remove the default border from AG Grid */
+    }
+</style>
+"""
+
 # --- Data Loading Function with Caching ---
-@st.cache_data(ttl=600) # Cache the data for 10 minutes
+@st.cache_data(ttl=600)
 def load_leaderboard_data():
     """
     Connects to Google Sheets and fetches the leaderboard data.
     Returns a pandas DataFrame.
     """
     try:
-        # Check if secrets are configured before trying to use them
         if "gcp_service_account" not in st.secrets:
             st.error("GCP service account secret is not configured. Please add it in your app settings.")
             return None
@@ -37,24 +56,13 @@ def load_leaderboard_data():
         return df
     except Exception as e:
         st.error(f"Failed to load data from Google Sheets: {e}")
-        return pd.DataFrame() # Return empty dataframe on error
+        return pd.DataFrame()
 
 
 # --- Main Page Display ---
 
-# Hide the sidebar using Streamlit's built-in command
-st.set_page_config(initial_sidebar_state="collapsed")
-st.markdown(
-    """
-<style>
-    [data-testid="collapsedControl"] {
-        display: none
-    }
-</style>
-""",
-    unsafe_allow_html=True,
-)
-
+# Inject the custom CSS into the page
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 st.header("Pocket viikkokisat '25")
 
@@ -65,7 +73,7 @@ if leaderboard_df is not None and not leaderboard_df.empty:
     # --- AG-Grid Configuration ---
     gb = GridOptionsBuilder.from_dataframe(leaderboard_df)
     
-    # Configure the 'Total Points' column to be bold
+    # Style the 'Total Points' column to be bold
     bold_cell_style = JsCode("""
     function(params) {
         return {'fontWeight': 'bold'}
@@ -86,9 +94,8 @@ if leaderboard_df is not None and not leaderboard_df.empty:
     AgGrid(
         leaderboard_df,
         gridOptions=gridOptions,
-        theme='streamlit',  # Use Streamlit's default theme
-        allow_unsafe_jscode=True, # Allow the bold style to be applied
-        # Fit columns to screen width, but allow horizontal scroll if needed
+        theme='streamlit',
+        allow_unsafe_jscode=True,
         fit_columns_on_grid_load=False 
     )
 
