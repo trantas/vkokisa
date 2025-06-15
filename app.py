@@ -7,12 +7,11 @@ from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 import tournament_scraper # Your module
 
 # --- Page Configuration ---
-# All page settings are now in this single command at the top of the script.
 st.set_page_config(
     page_title="Pocket Viikkokisat '25",
     page_icon="🎱",
     layout="wide",
-    initial_sidebar_state="collapsed" # This helps, but CSS below is needed to fully hide it
+    initial_sidebar_state="collapsed"
 )
 
 # --- Constant ---
@@ -22,17 +21,23 @@ GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 # --- Custom CSS for Styling & Hiding UI Elements ---
 CUSTOM_CSS = """
 <style>
-    /* This robustly hides the sidebar and its hamburger button */
+    /* Hide the sidebar navigation completely */
     [data-testid="stSidebar"] {
         display: none;
     }
     [data-testid="collapsedControl"] {
         display: none;
     }
+
+    /* ADDED: A container to ensure horizontal scrolling on narrow screens */
+    .grid-container {
+        width: 100%;
+        overflow-x: auto;
+    }
     
-    /* This is the container for the data grid */
+    /* Remove the default border from AG Grid */
     .ag-root-wrapper {
-        border: none !important; /* Remove the default border from AG Grid */
+        border: none !important;
     }
 </style>
 """
@@ -73,7 +78,6 @@ if leaderboard_df is not None and not leaderboard_df.empty:
     # --- AG-Grid Configuration ---
     gb = GridOptionsBuilder.from_dataframe(leaderboard_df)
     
-    # Style the 'Total Points' column to be bold
     bold_cell_style = JsCode("""
     function(params) {
         return {'fontWeight': 'bold'}
@@ -81,23 +85,28 @@ if leaderboard_df is not None and not leaderboard_df.empty:
     """)
     gb.configure_column("Total Points", cellStyle=bold_cell_style)
     
-    # Configure 'Rank' and 'Player' to be pinned to the left
+    # Configure pinned columns
     gb.configure_column("Rank", pinned="left", width=70)
     gb.configure_column("Player", pinned="left", width=180)
     
-    # Configure the grid to auto-size its height to show all rows
     gb.configure_grid_options(domLayout='autoHeight')
     
     gridOptions = gb.build()
     
     # --- Display the AG-Grid Table ---
+
+    # ADDED: Wrap the AgGrid call in a div with our custom class
+    st.markdown('<div class="grid-container">', unsafe_allow_html=True)
+    
     AgGrid(
         leaderboard_df,
         gridOptions=gridOptions,
         theme='streamlit',
         allow_unsafe_jscode=True,
-        fit_columns_on_grid_load=False 
+        fit_columns_on_grid_load=False
     )
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 else:
     st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update on the /update page.")
