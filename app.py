@@ -77,20 +77,19 @@ if leaderboard_df is not None and not leaderboard_df.empty:
         df_scrollable = leaderboard_df.drop(columns=fixed_columns)
 
         # Create a layout with two columns
-        col1, col2 = st.columns([1, 3]) # Give more space to the scrolling part
+        col1, col2 = st.columns([1, 3]) 
 
         with col1:
             st.write("**Ranking**")
-            # --- FIXED ---
             # Use st.table for the fixed columns. It's simpler and more stable.
-            # We set 'Rank' as the index because st.table always shows the index.
             st.table(df_fixed.set_index('Rank'))
 
         with col2:
             st.write("**Points by Tournament**")
-            # The right-hand side still uses the powerful st.dataframe for horizontal scrolling
+            # --- FIXED ---
+            # Pass the raw dataframe directly, without the .style accessor.
             st.dataframe(
-                df_scrollable.style.background_gradient(cmap='viridis', subset=['Total Points']), 
+                df_scrollable, 
                 hide_index=True, 
                 use_container_width=True
             )
