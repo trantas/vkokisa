@@ -14,8 +14,41 @@ st.set_page_config(
 
 # --- Constant ---
 # IMPORTANT: Set this to the exact name of your Google Sheet
-GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
+GOOGLE_SHEET_NAME = "Your Google Sheet Name Here"
 
+# --- Custom CSS for Styling the Table ---
+# This CSS makes the first two columns sticky and removes the vertical scrollbar
+TABLE_STYLING_CSS = """
+<style>
+/* Target the Streamlit dataframe component */
+[data-testid="stDataFrame"] {
+    /* Remove the max-height to display the full table */
+    max-height: none !important;
+}
+
+/* Make the header row sticky */
+[data-testid="stDataFrame"] > div:nth-child(2) > div > div > div > div:nth-child(1) {
+    position: sticky !important;
+    top: 0;
+    z-index: 2;
+}
+
+/* Make the first column (Rank) sticky */
+[data-testid="stDataFrame"] > div:nth-child(2) > div > div > div > div:nth-child(2) > div > div:nth-child(1) {
+    position: sticky !important;
+    left: 0;
+    z-index: 1;
+    background-color: #0e1117; /* Match Streamlit's dark theme background */
+}
+/* Make the second column (Player) sticky */
+[data-testid="stDataFrame"] > div:nth-child(2) > div > div > div > div:nth-child(2) > div > div:nth-child(2) {
+    position: sticky !important;
+    left: 60px; /* Adjust this value based on the width of your first column */
+    z-index: 1;
+    background-color: #0e1117; /* Match Streamlit's dark theme background */
+}
+</style>
+"""
 
 # --- Data Loading Function with Caching ---
 @st.cache_data(ttl=600) # Cache the data for 10 minutes
@@ -25,6 +58,10 @@ def load_leaderboard_data():
     Returns a pandas DataFrame.
     """
     try:
+        # Check if secrets are configured before trying to use them
+        if "gcp_service_account" not in st.secrets:
+            st.error("GCP service account secret is not configured. Please add it in your app settings.")
+            return None
         creds = dict(st.secrets["gcp_service_account"])
         gc = gspread.service_account_from_dict(creds)
         spreadsheet = gc.open(GOOGLE_SHEET_NAME)
@@ -38,27 +75,15 @@ def load_leaderboard_data():
 
 # --- Main Page Display ---
 
-st.title("Pocket viikkokisat '25 pisteet")
+# Use the smaller header for the title
+st.header("Pocket viikkokisat '25")
+
+# Inject the custom CSS into the page
+st.markdown(TABLE_STYLING_CSS, unsafe_allow_html=True)
 
 leaderboard_df = load_leaderboard_data()
 
 if not leaderboard_df.empty:
-    # Prepare the dataframe for styling
-    df_to_display = leaderboard_df.copy()
-    
-    # Ensure 'Rank' is set as the index for display but not part of styling
-    if 'Rank' in df_to_display.columns:
-        df_to_display = df_to_display.set_index('Rank')
-
-    # Identify numeric columns for styling (all except 'Player')
-    numeric_cols = [col for col in df_to_display.columns if col != 'Player']
-    
-    # Apply styles
-    st.dataframe(
-        df_to_display.style
-            .background_gradient(cmap='viridis', subset=['Total Points'])
-            .format("{:.0f}", subset=numeric_cols), # Format all numeric columns as integers
-        use_container_width=True
-    )
+    st.dataframe(leaderboard_df, use_container_width=True, hide_index=True)
 else:
-    st.warning("Leaderboard data could not be loaded. Please run an update on the 'Update Data' page.")
+    st.warning("Leaderboard data could not be loaded. An admin can run an update at the /update page.")
