@@ -16,37 +16,38 @@ st.set_page_config(
 # IMPORTANT: Set this to the exact name of your Google Sheet
 GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
-# --- Custom CSS for Styling the Table ---
-# This CSS makes the first two columns sticky and removes the vertical scrollbar
+# --- Custom CSS for Advanced Table Styling ---
+# This new CSS block is more robust and specifically targets the correct elements.
 TABLE_STYLING_CSS = """
 <style>
-/* Target the Streamlit dataframe component */
-[data-testid="stDataFrame"] {
-    /* Remove the max-height to display the full table */
-    max-height: none !important;
-}
+    /* This is the container for the data rows */
+    div[data-testid="stDataFrame"] > div:nth-child(2) > div {
+        max-height: none !important; /* Remove the vertical scrollbar */
+    }
+    
+    /* Make the table header sticky */
+    thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background-color: #1a1c24; /* A slightly darker color for the header background */
+    }
 
-/* Make the header row sticky */
-[data-testid="stDataFrame"] > div:nth-child(2) > div > div > div > div:nth-child(1) {
-    position: sticky !important;
-    top: 0;
-    z-index: 2;
-}
+    /* Make the first column (Rank) sticky */
+    thead th:nth-child(1), tbody td:nth-child(1) {
+        position: sticky;
+        left: 0;
+        background-color: #0e1117; /* Match Streamlit's dark theme background */
+        z-index: 2; /* Needs to be on top of the header's z-index */
+    }
 
-/* Make the first column (Rank) sticky */
-[data-testid="stDataFrame"] > div:nth-child(2) > div > div > div > div:nth-child(2) > div > div:nth-child(1) {
-    position: sticky !important;
-    left: 0;
-    z-index: 1;
-    background-color: #0e1117; /* Match Streamlit's dark theme background */
-}
-/* Make the second column (Player) sticky */
-[data-testid="stDataFrame"] > div:nth-child(2) > div > div > div > div:nth-child(2) > div > div:nth-child(2) {
-    position: sticky !important;
-    left: 60px; /* Adjust this value based on the width of your first column */
-    z-index: 1;
-    background-color: #0e1117; /* Match Streamlit's dark theme background */
-}
+    /* Make the second column (Player) sticky */
+    thead th:nth-child(2), tbody td:nth-child(2) {
+        position: sticky;
+        left: 60px;  /* Adjust this value to match the width of your Rank column */
+        background-color: #0e1117;
+        z-index: 2;
+    }
 </style>
 """
 
@@ -84,6 +85,7 @@ st.markdown(TABLE_STYLING_CSS, unsafe_allow_html=True)
 leaderboard_df = load_leaderboard_data()
 
 if not leaderboard_df.empty:
+    # Use st.dataframe with hide_index=True to prevent showing the pandas index
     st.dataframe(leaderboard_df, use_container_width=True, hide_index=True)
 else:
-    st.warning("Leaderboard data could not be loaded. An admin can run an update at the /update page.")
+    st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update on the /update page.")
