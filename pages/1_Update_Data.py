@@ -34,7 +34,7 @@ if check_password():
     st.write("Use this page to process a new tournament and update the master leaderboard.")
 
     # --- Constant ---
-    GOOGLE_SHEET_NAME = "Your Google Sheet Name Here"
+    GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
     with st.form(key='scraper_form'):
         tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1)

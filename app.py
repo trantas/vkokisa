@@ -13,13 +13,18 @@ st.set_page_config(
 )
 
 # --- Constant ---
-# IMPORTANT: Set this to the exact name of your Google Sheet
+# Default Google Sheet name has been updated
 GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
 
-# --- Custom CSS for our own HTML Table ---
+# --- Custom CSS for Advanced Table Styling & Hiding Sidebar ---
 TABLE_STYLING_CSS = """
 <style>
+    /* ADDED: Hide the sidebar navigation */
+    [data-testid="stSidebar"] {
+        display: none;
+    }
+    
     /* This class will be applied to the container of our table */
     .table-container {
         width: 100%;
@@ -27,9 +32,9 @@ TABLE_STYLING_CSS = """
     }
     /* Style the table itself */
     #leaderboard-table {
-        border-collapse: collapse; /* Essential for sticky headers */
+        border-collapse: collapse;
         width: 100%;
-        color: #FAFAFA; /* Text color for dark theme */
+        color: #FAFAFA;
     }
     /* Style header and data cells */
     #leaderboard-table th, #leaderboard-table td {
@@ -39,7 +44,7 @@ TABLE_STYLING_CSS = """
     }
     /* Style the header row */
     #leaderboard-table thead th {
-        background-color: #1a1c24; /* A slightly darker color for the header */
+        background-color: #1a1c24;
         position: sticky;
         top: 0;
         z-index: 10;
@@ -49,7 +54,7 @@ TABLE_STYLING_CSS = """
     #leaderboard-table tbody tr td:nth-child(1) {
         position: sticky;
         left: 0;
-        background-color: #0e1117; /* Match Streamlit's dark theme background */
+        background-color: #0e1117;
         z-index: 5;
     }
     /* Make the second column (Player) sticky */
@@ -89,11 +94,16 @@ def load_leaderboard_data():
 
 st.header("Pocket viikkokisat '25")
 
+st.markdown(TABLE_STYLING_CSS, unsafe_allow_html=True)
+
 leaderboard_df = load_leaderboard_data()
 
 if not leaderboard_df.empty:
-    # Convert the DataFrame to an HTML table with a specific ID
-    table_html = leaderboard_df.to_html(
+    # ADDED: Apply bold styling to the 'Total Points' column before converting to HTML
+    styled_df = leaderboard_df.style.set_properties(**{'font-weight': 'bold'}, subset=['Total Points'])
+    
+    # Convert the STYLED DataFrame to an HTML table
+    table_html = styled_df.to_html(
         index=False, 
         escape=False, 
         table_id="leaderboard-table",
@@ -101,9 +111,9 @@ if not leaderboard_df.empty:
     )
 
     # Combine the custom CSS and the HTML table into a single string
-    full_html = f"{TABLE_STYLING_CSS}<div class='table-container'>{table_html}</div>"
+    full_html = f"<div class='table-container'>{table_html}</div>"
 
     # Display using st.markdown
     st.markdown(full_html, unsafe_allow_html=True)
 else:
-    st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update on the /update page.")
+    st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update at the /update page.")
