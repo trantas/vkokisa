@@ -14,39 +14,51 @@ st.set_page_config(
 
 # --- Constant ---
 # IMPORTANT: Set this to the exact name of your Google Sheet
-GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
+GOOGLE_SHEET_NAME = "Your Google Sheet Name Here"
 
-# --- Custom CSS for Advanced Table Styling ---
-# This new CSS block is more robust and specifically targets the correct elements.
+
+# --- Custom CSS for our own HTML Table ---
 TABLE_STYLING_CSS = """
 <style>
-    /* This is the container for the data rows */
-    div[data-testid="stDataFrame"] > div:nth-child(2) > div {
-        max-height: none !important; /* Remove the vertical scrollbar */
+    /* This class will be applied to the container of our table */
+    .table-container {
+        width: 100%;
+        overflow-x: auto; /* Enable horizontal scrolling */
     }
-    
-    /* Make the table header sticky */
-    thead th {
+    /* Style the table itself */
+    #leaderboard-table {
+        border-collapse: collapse; /* Essential for sticky headers */
+        width: 100%;
+        color: #FAFAFA; /* Text color for dark theme */
+    }
+    /* Style header and data cells */
+    #leaderboard-table th, #leaderboard-table td {
+        padding: 8px 12px;
+        border: 1px solid #3d3d3d;
+        text-align: center;
+    }
+    /* Style the header row */
+    #leaderboard-table thead th {
+        background-color: #1a1c24; /* A slightly darker color for the header */
         position: sticky;
         top: 0;
-        z-index: 1;
-        background-color: #1a1c24; /* A slightly darker color for the header background */
+        z-index: 10;
     }
-
     /* Make the first column (Rank) sticky */
-    thead th:nth-child(1), tbody td:nth-child(1) {
+    #leaderboard-table thead th:nth-child(1),
+    #leaderboard-table tbody tr td:nth-child(1) {
         position: sticky;
         left: 0;
         background-color: #0e1117; /* Match Streamlit's dark theme background */
-        z-index: 2; /* Needs to be on top of the header's z-index */
+        z-index: 5;
     }
-
     /* Make the second column (Player) sticky */
-    thead th:nth-child(2), tbody td:nth-child(2) {
+    #leaderboard-table thead th:nth-child(2),
+    #leaderboard-table tbody tr td:nth-child(2) {
         position: sticky;
-        left: 60px;  /* Adjust this value to match the width of your Rank column */
+        left: 60px; /* Adjust this value based on the width of the Rank column */
         background-color: #0e1117;
-        z-index: 2;
+        z-index: 5;
     }
 </style>
 """
@@ -59,7 +71,6 @@ def load_leaderboard_data():
     Returns a pandas DataFrame.
     """
     try:
-        # Check if secrets are configured before trying to use them
         if "gcp_service_account" not in st.secrets:
             st.error("GCP service account secret is not configured. Please add it in your app settings.")
             return None
@@ -76,16 +87,23 @@ def load_leaderboard_data():
 
 # --- Main Page Display ---
 
-# Use the smaller header for the title
 st.header("Pocket viikkokisat '25")
-
-# Inject the custom CSS into the page
-st.markdown(TABLE_STYLING_CSS, unsafe_allow_html=True)
 
 leaderboard_df = load_leaderboard_data()
 
 if not leaderboard_df.empty:
-    # Use st.dataframe with hide_index=True to prevent showing the pandas index
-    st.dataframe(leaderboard_df, use_container_width=True, hide_index=True)
+    # Convert the DataFrame to an HTML table with a specific ID
+    table_html = leaderboard_df.to_html(
+        index=False, 
+        escape=False, 
+        table_id="leaderboard-table",
+        justify="center"
+    )
+
+    # Combine the custom CSS and the HTML table into a single string
+    full_html = f"{TABLE_STYLING_CSS}<div class='table-container'>{table_html}</div>"
+
+    # Display using st.markdown
+    st.markdown(full_html, unsafe_allow_html=True)
 else:
     st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update on the /update page.")
