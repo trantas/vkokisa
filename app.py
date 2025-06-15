@@ -1,4 +1,4 @@
-# app.py - The Leaderboard Front Page
+# app.py - The Leaderboard Front Page (Simplified View)
 
 import streamlit as st
 import pandas as pd
@@ -32,7 +32,7 @@ st.markdown(
 )
 
 # --- Data Loading Function with Caching ---
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600) # Cache the data for 10 minutes
 def load_leaderboard_data():
     """
     Connects to Google Sheets and fetches the leaderboard data.
@@ -47,9 +47,6 @@ def load_leaderboard_data():
         spreadsheet = gc.open(GOOGLE_SHEET_NAME)
         worksheet = spreadsheet.sheet1
         df = pd.DataFrame(worksheet.get_all_records())
-        # Ensure 'Total Points' is numeric for styling
-        if 'Total Points' in df.columns:
-            df['Total Points'] = pd.to_numeric(df['Total Points'], errors='coerce')
         return df
     except Exception as e:
         st.error(f"Failed to load data from Google Sheets: {e}")
@@ -64,38 +61,14 @@ leaderboard_df = load_leaderboard_data()
 
 if leaderboard_df is not None and not leaderboard_df.empty:
     
-    # --- SPLIT TABLE LOGIC ---
-
-    # Define the columns that will be fixed
-    fixed_columns = ['Rank', 'Player']
-    
-    # Check if required columns exist before proceeding
-    if all(col in leaderboard_df.columns for col in fixed_columns):
-        
-        # Create the two separate dataframes
-        df_fixed = leaderboard_df[fixed_columns]
-        df_scrollable = leaderboard_df.drop(columns=fixed_columns)
-
-        # Create a layout with two columns
-        col1, col2 = st.columns([1, 3]) 
-
-        with col1:
-            st.write("**Ranking**")
-            # Use st.table for the fixed columns. It's simpler and more stable.
-            st.table(df_fixed.set_index('Rank'))
-
-        with col2:
-            st.write("**Points by Tournament**")
-            # --- FIXED ---
-            # Pass the raw dataframe directly, without the .style accessor.
-            st.dataframe(
-                df_scrollable, 
-                hide_index=True, 
-                use_container_width=True
-            )
-    else:
-        st.warning("Leaderboard columns 'Rank' and 'Player' not found. Displaying raw table.")
-        st.dataframe(leaderboard_df, hide_index=True, use_container_width=True)
+    # --- Simplified Display Logic ---
+    # Display the entire leaderboard in a single, standard Streamlit dataframe.
+    # This view is clean but may not render on very narrow mobile screens.
+    st.dataframe(
+        leaderboard_df, 
+        hide_index=True, 
+        use_container_width=True
+    )
 
 else:
     st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update on the /update page.")
