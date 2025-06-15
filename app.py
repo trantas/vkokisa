@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 import tournament_scraper # Your module
+import sys
 
 # --- Page Configuration ---
 # This is the only call to set_page_config and it's at the top.
@@ -16,6 +17,8 @@ st.set_page_config(
 # --- Constant ---
 GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
+# --- Hide Sidebar CSS ---
+# We no longer need the sidebar hiding CSS as there is only one page file.
 
 # --- Data Loading Function (for Homepage) ---
 @st.cache_data(ttl=600)
@@ -32,6 +35,7 @@ def load_leaderboard_data():
         spreadsheet = gc.open(GOOGLE_SHEET_NAME)
         worksheet = spreadsheet.sheet1
         df = pd.DataFrame(worksheet.get_all_records())
+        # Ensure 'Total Points' is numeric
         if 'Total Points' in df.columns:
             df['Total Points'] = pd.to_numeric(df['Total Points'], errors='coerce')
         return df
@@ -53,7 +57,7 @@ def render_home_page():
             table_height = (len(df_to_display) + 1) * 35
             st.dataframe(df_to_display, use_container_width=True, height=table_height)
         else:
-            st.warning("Leaderboard missing 'Rank' column. Displaying raw data.")
+            st.warning("Leaderboard is missing 'Rank' column. Displaying raw data.")
             st.dataframe(leaderboard_df, use_container_width=True)
     else:
         st.warning("Leaderboard data could not be loaded or is empty.")
@@ -64,7 +68,6 @@ def render_update_page():
     """Renders the password-protected update tool."""
     st.title("Update Tournament Data")
 
-    # Password Protection
     if not hasattr(st.secrets, "PASSWORD"):
         st.error("Password is not configured for this app. Please add it to your Streamlit Secrets.")
         return
@@ -72,13 +75,12 @@ def render_update_page():
     password = st.text_input("Enter password to access this page", type="password")
     
     if password != st.secrets["PASSWORD"]:
-        if password: # Show error only if a password was entered
+        if password:
             st.error("The password you entered is incorrect.")
-        else: # Prompt to enter password
+        else:
             st.info("Please enter the password to continue.")
-        return # Stop rendering the rest of the page
+        return
 
-    # If password is correct, show the rest of the page
     st.success("Password correct. You can now update a tournament.")
     st.write("---")
 
@@ -135,8 +137,13 @@ def render_update_page():
 
 
 # --- Main Router ---
-# Use query params to decide which page to show.
-if st.query_params.get("page") == "update":
+# Use the backward-compatible experimental version to get query params.
+query_params = st.experimental_get_query_params()
+
+# .get() returns a list, so we take the first item, or default to "home".
+page = query_params.get("page", ["home"])[0]
+
+if page == "update":
     render_update_page()
 else:
     render_home_page()
