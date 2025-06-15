@@ -32,7 +32,7 @@ st.markdown(
 )
 
 # --- Data Loading Function with Caching ---
-@st.cache_data(ttl=600) # Cache the data for 10 minutes
+@st.cache_data(ttl=600)
 def load_leaderboard_data():
     """
     Connects to Google Sheets and fetches the leaderboard data.
@@ -62,13 +62,25 @@ leaderboard_df = load_leaderboard_data()
 if leaderboard_df is not None and not leaderboard_df.empty:
     
     # --- Simplified Display Logic ---
-    # Display the entire leaderboard in a single, standard Streamlit dataframe.
-    # This view is clean but may not render on very narrow mobile screens.
-    st.dataframe(
-        leaderboard_df, 
-        hide_index=True, 
-        use_container_width=True
-    )
+    
+    # Check if the required 'Rank' column exists before trying to set it as the index
+    if 'Rank' in leaderboard_df.columns:
+        # --- FIXED ---
+        # Set the 'Rank' column as the DataFrame's index. This replaces the default 0,1,2... index.
+        df_to_display = leaderboard_df.set_index('Rank')
+        
+        # Display the dataframe without the problematic 'hide_index' argument.
+        st.dataframe(
+            df_to_display, 
+            use_container_width=True
+        )
+    else:
+        # Fallback for if the 'Rank' column is missing for some reason
+        st.warning("Leaderboard is missing the 'Rank' column. Displaying raw data.")
+        st.dataframe(
+            leaderboard_df, 
+            use_container_width=True
+        )
 
 else:
     st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update on the /update page.")
