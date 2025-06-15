@@ -12,7 +12,7 @@ st.write("Enter a tournament ID from tspool.fi to fetch data, calculate points, 
 
 # Use a form to group the input and button
 with st.form(key='scraper_form'):
-    tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1, value=000)
+    tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1, value=840)
     # IMPORTANT: Change this to the exact name of your Google Sheet
     google_sheet_name = st.text_input("Google Sheet Name:", value="pocket viikkokisa leaderboard")
     submit_button = st.form_submit_button(label='Run Scraper and Update Leaderboard')
