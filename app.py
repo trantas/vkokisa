@@ -24,52 +24,77 @@ TABLE_STYLING_CSS = """
         display: none;
     }
     
-    /* This class will be applied to the container of our table */
+    /* This is the container for the data rows. Remove height limit */
+    div[data-testid="stDataFrame"] > div:nth-child(2) > div {
+        max-height: none !important;
+    }
+
+    /* Define the scrollable container for the table */
     .table-container {
         width: 100%;
-        overflow-x: auto; /* Enable horizontal scrolling */
+        overflow-x: auto;
     }
-    /* Style the table itself */
+    
     #leaderboard-table {
-        border-collapse: collapse;
         width: 100%;
-        color: #FAFAFA;
+        border-collapse: collapse;
     }
-    /* Style header and data cells */
+    
     #leaderboard-table th, #leaderboard-table td {
         padding: 8px 12px;
         border: 1px solid #3d3d3d;
         text-align: center;
-        white-space: nowrap; /* ADDED: Prevent content from wrapping to force horizontal scroll */
+        white-space: nowrap;
     }
-    /* Style the header row */
+
+    /* --- STICKY RULES --- */
+
+    /* General sticky header */
     #leaderboard-table thead th {
-        background-color: #1a1c24;
+        position: -webkit-sticky; /* for Safari */
         position: sticky;
         top: 0;
-        z-index: 10;
+        background: #1a1c24; /* A slightly darker color for the header */
+        z-index: 3;
     }
-    /* Make the first column (Rank) sticky */
+
+    /* First sticky column (Rank) */
     #leaderboard-table thead th:nth-child(1),
-    #leaderboard-table tbody tr td:nth-child(1) {
+    #leaderboard-table tbody td:nth-child(1) {
+        position: -webkit-sticky; /* for Safari */
         position: sticky;
         left: 0;
-        background-color: #0e1117;
-        z-index: 5;
+        background: #0e1117; /* Match Streamlit's dark theme background */
+        z-index: 2;
     }
-    /* Make the second column (Player) sticky */
+
+    /* Second sticky column (Player) */
     #leaderboard-table thead th:nth-child(2),
-    #leaderboard-table tbody tr td:nth-child(2) {
+    #leaderboard-table tbody td:nth-child(2) {
+        position: -webkit-sticky; /* for Safari */
         position: sticky;
-        left: 60px; /* Adjust this value based on the width of the Rank column */
-        background-color: #0e1117;
-        z-index: 5;
+        left: 60px; /* Adjust this to be width of first column */
+        background: #0e1117;
+        z-index: 2;
     }
+
+    /* The top-left corner cell (Rank header) must be on top of everything */
+    #leaderboard-table thead th:nth-child(1) {
+        z-index: 4; /* Higher z-index than other headers and cells */
+        background: #1a1c24; /* Match header background */
+    }
+    
+    /* The Player header cell also needs a higher z-index */
+    #leaderboard-table thead th:nth-child(2) {
+        z-index: 4;
+        background: #1a1c24; /* Match header background */
+    }
+
 </style>
 """
 
 # --- Data Loading Function with Caching ---
-@st.cache_data(ttl=600) # Cache the data for 10 minutes
+@st.cache_data(ttl=600)
 def load_leaderboard_data():
     """
     Connects to Google Sheets and fetches the leaderboard data.
@@ -87,34 +112,36 @@ def load_leaderboard_data():
         return df
     except Exception as e:
         st.error(f"Failed to load data from Google Sheets: {e}")
-        return pd.DataFrame() # Return empty dataframe on error
+        return pd.DataFrame()
 
 
 # --- Main Page Display ---
 
 st.header("Pocket viikkokisat '25")
 
+# Inject the custom CSS into the page
 st.markdown(TABLE_STYLING_CSS, unsafe_allow_html=True)
 
 leaderboard_df = load_leaderboard_data()
 
-if not leaderboard_df.empty:
-    # Apply styling: bold 'Total Points' and now correctly hide the index
+if leaderboard_df is not None and not leaderboard_df.empty:
+    # Apply bold styling to the 'Total Points' column and hide the pandas index
     styled_df = leaderboard_df.style \
         .set_properties(**{'font-weight': 'bold'}, subset=['Total Points']) \
-        .hide(axis="index") # <<< FIXED: Use hide() for styled dataframes
+        .hide(axis="index")
 
-    # Convert the STYLED DataFrame to an HTML table
+    # Convert the STYLED DataFrame to an HTML table with a specific ID
     table_html = styled_df.to_html(
         escape=False, 
         table_id="leaderboard-table",
         justify="center"
     )
 
-    # Combine the custom CSS and the HTML table into a single string
+    # Wrap the HTML table in our scrollable container
     full_html = f"<div class='table-container'>{table_html}</div>"
 
     # Display using st.markdown
     st.markdown(full_html, unsafe_allow_html=True)
 else:
+    # This message shows if the sheet is empty or fails to load
     st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update on the /update page.")
