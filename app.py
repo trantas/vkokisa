@@ -61,15 +61,19 @@ leaderboard_df = load_leaderboard_data()
 
 if leaderboard_df is not None and not leaderboard_df.empty:
     
-    # --- FIXED: Use set_index and a calculated height ---
-    
-    # Check if the required 'Rank' column exists before trying to set it as the index
-    if 'Rank' in leaderboard_df.columns:
+    # Check if the required columns exist before proceeding
+    if 'Rank' in leaderboard_df.columns and 'Player' in leaderboard_df.columns:
         
-        df_to_display = leaderboard_df.set_index('Rank')
+        # --- ADDED: Combine 'Rank' and 'Player' into a new 'Ranking' column ---
+        leaderboard_df['Ranking'] = leaderboard_df['Rank'].astype(str) + '. ' + leaderboard_df['Player'].astype(str)
         
-        # --- ADDED: Calculate height dynamically ---
-        # Calculate height: (number of rows + 1 for header) * 35 pixels per row
+        # Drop the old, separate columns
+        df_to_display = leaderboard_df.drop(columns=['Rank', 'Player'])
+        
+        # Set the new combined column as the DataFrame's index
+        df_to_display = df_to_display.set_index('Ranking')
+
+        # --- Calculate height dynamically ---
         table_height = (len(df_to_display) + 1) * 35
         
         # Display the dataframe with the new calculated height
@@ -79,8 +83,8 @@ if leaderboard_df is not None and not leaderboard_df.empty:
             height=table_height
         )
     else:
-        # Fallback for if the 'Rank' column is missing
-        st.warning("Leaderboard is missing the 'Rank' column. Displaying raw data.")
+        # Fallback for if the 'Rank' or 'Player' columns are missing
+        st.warning("Leaderboard is missing 'Rank' or 'Player' columns. Displaying raw data.")
         table_height = (len(leaderboard_df) + 1) * 35
         st.dataframe(
             leaderboard_df, 
