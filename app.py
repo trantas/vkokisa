@@ -13,14 +13,13 @@ st.set_page_config(
 )
 
 # --- Constant ---
-# Default Google Sheet name has been updated
 GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
 
 # --- Custom CSS for Advanced Table Styling & Hiding Sidebar ---
 TABLE_STYLING_CSS = """
 <style>
-    /* ADDED: Hide the sidebar navigation */
+    /* Hide the sidebar navigation */
     [data-testid="stSidebar"] {
         display: none;
     }
@@ -41,6 +40,7 @@ TABLE_STYLING_CSS = """
         padding: 8px 12px;
         border: 1px solid #3d3d3d;
         text-align: center;
+        white-space: nowrap; /* ADDED: Prevent content from wrapping to force horizontal scroll */
     }
     /* Style the header row */
     #leaderboard-table thead th {
@@ -99,12 +99,13 @@ st.markdown(TABLE_STYLING_CSS, unsafe_allow_html=True)
 leaderboard_df = load_leaderboard_data()
 
 if not leaderboard_df.empty:
-    # ADDED: Apply bold styling to the 'Total Points' column before converting to HTML
-    styled_df = leaderboard_df.style.set_properties(**{'font-weight': 'bold'}, subset=['Total Points'])
-    
+    # Apply styling: bold 'Total Points' and now correctly hide the index
+    styled_df = leaderboard_df.style \
+        .set_properties(**{'font-weight': 'bold'}, subset=['Total Points']) \
+        .hide(axis="index") # <<< FIXED: Use hide() for styled dataframes
+
     # Convert the STYLED DataFrame to an HTML table
     table_html = styled_df.to_html(
-        index=False, 
         escape=False, 
         table_id="leaderboard-table",
         justify="center"
@@ -116,4 +117,4 @@ if not leaderboard_df.empty:
     # Display using st.markdown
     st.markdown(full_html, unsafe_allow_html=True)
 else:
-    st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update at the /update page.")
+    st.warning("Leaderboard data could not be loaded or is empty. An admin can run an update on the /update page.")
