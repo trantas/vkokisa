@@ -1,4 +1,4 @@
-# app.py - The Leaderboard Front Page (Simplified View)
+# app.py - The Leaderboard Front Page
 
 import streamlit as st
 import pandas as pd
@@ -61,25 +61,31 @@ leaderboard_df = load_leaderboard_data()
 
 if leaderboard_df is not None and not leaderboard_df.empty:
     
-    # --- Simplified Display Logic ---
+    # --- FIXED: Use set_index and a calculated height ---
     
     # Check if the required 'Rank' column exists before trying to set it as the index
     if 'Rank' in leaderboard_df.columns:
-        # --- FIXED ---
-        # Set the 'Rank' column as the DataFrame's index. This replaces the default 0,1,2... index.
+        
         df_to_display = leaderboard_df.set_index('Rank')
         
-        # Display the dataframe without the problematic 'hide_index' argument.
+        # --- ADDED: Calculate height dynamically ---
+        # Calculate height: (number of rows + 1 for header) * 35 pixels per row
+        table_height = (len(df_to_display) + 1) * 35
+        
+        # Display the dataframe with the new calculated height
         st.dataframe(
             df_to_display, 
-            use_container_width=True
+            use_container_width=True,
+            height=table_height
         )
     else:
-        # Fallback for if the 'Rank' column is missing for some reason
+        # Fallback for if the 'Rank' column is missing
         st.warning("Leaderboard is missing the 'Rank' column. Displaying raw data.")
+        table_height = (len(leaderboard_df) + 1) * 35
         st.dataframe(
             leaderboard_df, 
-            use_container_width=True
+            use_container_width=True,
+            height=table_height
         )
 
 else:
