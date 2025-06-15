@@ -14,7 +14,7 @@ st.set_page_config(
 
 # --- Constant ---
 # IMPORTANT: Set this to the exact name of your Google Sheet
-GOOGLE_SHEET_NAME = "Your Google Sheet Name Here"
+GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
 
 # --- Custom CSS for our own HTML Table ---
