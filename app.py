@@ -17,7 +17,6 @@ st.set_page_config(
 GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
 # --- Hide Sidebar CSS ---
-# This remains the one piece of necessary CSS
 st.markdown(
     """
 <style>
@@ -82,12 +81,14 @@ if leaderboard_df is not None and not leaderboard_df.empty:
 
         with col1:
             st.write("**Ranking**")
-            # Display the fixed columns (Rank and Player)
-            st.dataframe(df_fixed, hide_index=True, use_container_width=True)
+            # --- FIXED ---
+            # Use st.table for the fixed columns. It's simpler and more stable.
+            # We set 'Rank' as the index because st.table always shows the index.
+            st.table(df_fixed.set_index('Rank'))
 
         with col2:
             st.write("**Points by Tournament**")
-            # Display the scrollable columns with a background gradient on 'Total Points'
+            # The right-hand side still uses the powerful st.dataframe for horizontal scrolling
             st.dataframe(
                 df_scrollable.style.background_gradient(cmap='viridis', subset=['Total Points']), 
                 hide_index=True, 
