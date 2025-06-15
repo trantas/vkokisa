@@ -62,13 +62,13 @@ if submit_button:
                     
                     if current_tournament_points:
                         try:
-                            # --- FIXED ---
-                            # This is where the magic happens
+                            creds_dict = dict(st.secrets["gcp_service_account"])
+                            
                             tournament_scraper.update_leaderboard_sheet(
                                 tournament_date=tournament_date,
-                                tournament_points=current_tournament_points, # This should be leaderboard_data
+                                tournament_points=current_tournament_points,
                                 sheet_name=google_sheet_name,
-                                creds=st.secrets["gcp_service_account"]
+                                creds=creds_dict # Pass the true dictionary
                             )
                             st.success(f"Master leaderboard '{google_sheet_name}' updated successfully!")
 
