@@ -1,6 +1,3 @@
 bs4
 gspread
 google-auth-oauthlib
-matplotlib
-streamlit-aggrid
-standard-imghdr
