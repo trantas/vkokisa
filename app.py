@@ -1,81 +1,147 @@
 import streamlit as st
 import pandas as pd
-import os
-import tournament_scraper # Import your custom module
+import gspread
+import tournament_scraper # Your module
 
-# --- App UI Configuration ---
-st.set_page_config(page_title="Tournament Scraper", layout="wide")
-st.title("Tournament Data Extractor")
-st.write("Enter a tournament ID from tspool.fi to fetch data, calculate points, and update the master leaderboard.")
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="Pocket Viikkokisat '25",
+    page_icon="🎱",
+    layout="wide"
+)
 
-# --- App Logic ---
+# --- Constant ---
+GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
-# Use a form to group the input and button
-with st.form(key='scraper_form'):
-    tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1, value=840)
-    # IMPORTANT: Change this to the exact name of your Google Sheet
-    google_sheet_name = st.text_input("Google Sheet Name:", value="pocket viikkokisa leaderboard")
-    submit_button = st.form_submit_button(label='Run Scraper and Update Leaderboard')
 
-if submit_button:
-    if "gcp_service_account" not in st.secrets:
-        st.error("Error: The `gcp_service_account` secret is not configured in your Streamlit Cloud settings. Please add it.")
-    elif not st.secrets["gcp_service_account"]:
-        st.error("Error: The `gcp_service_account` secret is empty. Please paste your full JSON key file content into the secret.")
-    elif not tournament_id or not google_sheet_name:
-        st.warning("Please enter a valid Tournament ID and Google Sheet Name.")
-    else:
-        with st.spinner(f"Processing tournament {tournament_id}... Please wait."):
+# --- Data Loading Function (for Homepage) ---
+@st.cache_data(ttl=600)
+def load_leaderboard_data():
+    """
+    Connects to Google Sheets and fetches the leaderboard data.
+    """
+    try:
+        if "gcp_service_account" not in st.secrets:
+            st.error("GCP service account secret is not configured in app settings.")
+            return None
+        creds = dict(st.secrets["gcp_service_account"])
+        gc = gspread.service_account_from_dict(creds)
+        spreadsheet = gc.open(GOOGLE_SHEET_NAME)
+        worksheet = spreadsheet.sheet1
+        df = pd.DataFrame(worksheet.get_all_records())
+        if 'Total Points' in df.columns:
+            df['Total Points'] = pd.to_numeric(df['Total Points'], errors='coerce')
+        return df
+    except Exception as e:
+        st.error(f"Failed to load data from Google Sheets: {e}")
+        return pd.DataFrame()
+
+
+# --- Page 1: Homepage / Leaderboard View ---
+def render_home_page():
+    """Renders the main leaderboard display."""
+    st.header("Pocket viikkokisat '25")
+    
+    leaderboard_df = load_leaderboard_data()
+
+    if leaderboard_df is not None and not leaderboard_df.empty:
+        if 'Rank' in leaderboard_df.columns and 'Player' in leaderboard_df.columns:
             
-            # --- 1. Extraction ---
-            st.subheader(f"Step 1: Extracting Data for Tournament {tournament_id}")
+            leaderboard_df['Ranking'] = leaderboard_df['Rank'].astype(str) + '. ' + leaderboard_df['Player'].astype(str)
+            df_to_display = leaderboard_df.drop(columns=['Rank', 'Player'])
+            cols = df_to_display.columns.tolist()
+            cols = ['Ranking'] + [col for col in cols if col != 'Ranking']
+            df_to_display = df_to_display[cols]
+            df_to_display = df_to_display.set_index('Ranking')
             
-            tournament_date = tournament_scraper.extract_tournament_date(
-                tournament_id, 
-                headers=tournament_scraper.HEADERS
+            table_height = (len(df_to_display) + 1) * 35
+            
+            st.dataframe(
+                df_to_display, 
+                use_container_width=True,
+                height=table_height
             )
+        else:
+            st.warning("Leaderboard is missing 'Rank' or 'Player' columns. Displaying raw data.")
+            st.dataframe(leaderboard_df, use_container_width=True)
+    else:
+        st.warning("Leaderboard data could not be loaded or is empty.")
 
-            if not tournament_date:
-                st.error(f"Could not find a valid date for tournament ID {tournament_id}. Aborting.")
-            else:
-                st.success(f"Found tournament date: {tournament_date}")
-                bracket_url = f"https://tspool.fi/kisa/{tournament_id}/kaavio/"
-                results_url = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
-                tournament_csv_filename = f"tournament_{tournament_id}_{tournament_date.replace('.', '-')}.csv"
 
-                final_standings = tournament_scraper.extract_final_standings(
-                    results_url, 
-                    headers=tournament_scraper.HEADERS
-                )
-                match_results = tournament_scraper.extract_match_data(
-                    bracket_url, 
-                    headers=tournament_scraper.HEADERS
-                )
+# --- Page 2: Update Tool View ---
+def render_update_page():
+    """Renders the password-protected update tool."""
+    st.title("Update Tournament Data")
 
-                # --- 2. Processing and Updating ---
-                st.subheader("Step 2: Calculating Points and Updating Leaderboard")
-                if match_results:
-                    player_wins = tournament_scraper.calculate_win_counts(match_results)
-                    current_tournament_points = tournament_scraper.calculate_tournament_points(
-                        match_results, player_wins, final_standings
-                    )
+    if not hasattr(st.secrets, "PASSWORD"):
+        st.error("Password is not configured for this app. Please add it to your Streamlit Secrets.")
+        return
+        
+    password = st.text_input("Enter password to access this page", type="password")
+    
+    if password != st.secrets["PASSWORD"]:
+        if password:
+            st.error("The password you entered is incorrect.")
+        else:
+            st.info("Please enter the password to continue.")
+        return
+
+    st.success("Authenticated.")
+    st.write("---")
+
+    with st.form(key='scraper_form'):
+        tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1)
+        submit_button = st.form_submit_button(label='Update tournament points')
+
+    if submit_button:
+        if not tournament_id:
+            st.warning("Please enter a valid Tournament ID.")
+        else:
+            try:
+                with st.spinner(f"Processing tournament {tournament_id}..."):
                     
-                    if current_tournament_points:
-                        try:
-                            creds_dict = dict(st.secrets["gcp_service_account"])
-                            
-                            tournament_scraper.update_leaderboard_sheet(
-                                tournament_date=tournament_date,
-                                tournament_points=current_tournament_points,
-                                sheet_name=google_sheet_name,
-                                creds=creds_dict # Pass the true dictionary
-                            )
-                            st.success(f"Master leaderboard '{google_sheet_name}' updated successfully!")
+                    tournament_date = tournament_scraper.extract_tournament_date(tournament_id, headers=tournament_scraper.HEADERS)
+                    if not tournament_date:
+                        raise ValueError(f"Could not find a valid date for tournament ID {tournament_id}.")
 
-                        except Exception as e:
-                            st.error(f"An error occurred while updating the leaderboard.")
-                            st.error(f"Error details: {e}")
-                    else:
+                    bracket_url = f"https://tspool.fi/kisa/{tournament_id}/kaavio/"
+                    results_url = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
+                    
+                    final_standings = tournament_scraper.extract_final_standings(results_url, headers=tournament_scraper.HEADERS)
+                    match_results = tournament_scraper.extract_match_data(bracket_url, headers=tournament_scraper.HEADERS)
+                    
+                    if not match_results:
+                        st.warning("Could not retrieve any valid match results from the bracket.")
+                        return
+
+                    player_wins = tournament_scraper.calculate_win_counts(match_results)
+                    points = tournament_scraper.calculate_tournament_points(match_results, player_wins, final_standings)
+
+                    if not points:
                         st.warning("No player points were calculated for this tournament.")
-                else:
-                    st.warning("Could not retrieve any valid match results from the bracket.")
+                        return
+                    
+                    creds = dict(st.secrets["gcp_service_account"])
+                    tournament_scraper.update_leaderboard_sheet(
+                        tournament_date=tournament_date,
+                        tournament_points=points,
+                        sheet_name=GOOGLE_SHEET_NAME,
+                        creds=creds
+                    )
+                
+                st.success(f"Leaderboard '{GOOGLE_SHEET_NAME}' updated successfully!")
+                st.markdown("[Return to Homepage](/)")
+
+            except Exception as e:
+                st.error(f"An error occurred during processing:")
+                st.error(e)
+
+
+# --- Main Router ---
+query_params = st.experimental_get_query_params()
+page = query_params.get("page", ["home"])[0]
+
+if page == "update":
+    render_update_page()
+else:
+    render_home_page()

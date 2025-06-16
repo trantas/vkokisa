@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 import csv
-import pandas as pd
 import logging
 import re
 import argparse
@@ -125,26 +124,30 @@ def extract_final_standings(url: str, headers: dict, top_n: int = 4) -> list:
 
 #region --- Data Processing and Export Functions ---
 def calculate_win_counts(matches: list) -> dict:
+    """Calculates the number of wins for each player, including wins by forfeit."""
     win_counts = {}
     logging.info("Calculating win counts from bracket data...")
     for match in matches:
         try:
             p1_name = match['player1']
             p2_name = match['player2']
+            winner = None
+            
+            # REFACTORED: Determine winner first, then update count once.
             if p1_name.strip().startswith('FF '):
                 winner = p2_name
-                if winner.upper() != 'WO': win_counts[winner] = win_counts.get(winner, 0) + 1
-                continue
-            if p2_name.strip().startswith('FF '):
+            elif p2_name.strip().startswith('FF '):
                 winner = p1_name
-                if winner.upper() != 'WO': win_counts[winner] = win_counts.get(winner, 0) + 1
-                continue
-            score_parts = match['score'].split('-')
-            if len(score_parts) != 2: continue
-            score1, score2 = int(score_parts[0].strip()), int(score_parts[1].strip())
-            winner = None
-            if score1 > score2: winner = p1_name
-            elif score2 > score1: winner = p2_name
+            else:
+                score_parts = match['score'].split('-')
+                if len(score_parts) == 2:
+                    score1 = int(score_parts[0].strip())
+                    score2 = int(score_parts[1].strip())
+                    if score1 > score2:
+                        winner = p1_name
+                    elif score2 > score1:
+                        winner = p2_name
+            
             if winner and winner.upper() != 'WO':
                 win_counts[winner] = win_counts.get(winner, 0) + 1
         except (ValueError, IndexError):
@@ -207,40 +210,24 @@ def save_tournament_csv(tournament_points: list, final_standings: list, filename
         logging.error(f"Error writing detailed tournament CSV to file: {e}")
 
 def update_leaderboard_sheet(tournament_date: str, tournament_points: list, sheet_name: str, creds):
-    """
-    Creates or updates the master leaderboard in a Google Sheet.
-    Now robustly handles credentials passed as a JSON string.
-    """
-    if not creds:
-        logging.error("Credentials passed to update_leaderboard_sheet were empty or None.")
-        raise ValueError("Credentials not provided. Please check your Streamlit Secrets configuration.")
-
-    logging.info(f"Received credentials of type: {type(creds)}")
-    
+    logging.info(f"Connecting to Google Sheets to update '{sheet_name}'...")
     try:
         if isinstance(creds, str):
-            logging.info("Credentials passed as a string. Attempting to parse JSON.")
-            if len(creds) < 100: # Basic sanity check for a non-trivial JSON string
-                 logging.error(f"Received credentials string is too short to be valid JSON.")
-                 raise ValueError("Invalid credentials string. It might be empty or misconfigured.")
             credentials_dict = json.loads(creds)
         else:
             credentials_dict = creds
-            
         gc = gspread.service_account_from_dict(credentials_dict)
         spreadsheet = gc.open(sheet_name)
         worksheet = spreadsheet.sheet1
-    except json.JSONDecodeError as e:
-        logging.error(f"JSON Decode Error: Failed to parse credentials string. It is likely not valid JSON. Error: {e}")
-        raise ValueError(f"Could not parse credentials. Check formatting. Error: {e}")
     except Exception as e:
         logging.error(f"Failed to connect to Google Sheets. Check credentials, sheet name, and sharing settings. Error: {e}")
         raise
-
+    
+    # Need to import pandas here for this function to work
+    import pandas as pd 
     leaderboard_data = [{'Player': p['Player'], 'Total Points': p['Total Points']} for p in tournament_points]
     current_df = pd.DataFrame(leaderboard_data)
     current_df = current_df.rename(columns={'Total Points': tournament_date})
-
     existing_records = worksheet.get_all_records()
     
     if existing_records:
@@ -251,7 +238,6 @@ def update_leaderboard_sheet(tournament_date: str, tournament_points: list, shee
         total_df = pd.merge(total_df, current_df, on='Player', how='outer')
     else:
         total_df = current_df
-
     total_df = total_df.fillna(0)
     
     fixed_cols = ['Player', 'Rank', 'Total Points']
@@ -264,10 +250,9 @@ def update_leaderboard_sheet(tournament_date: str, tournament_points: list, shee
             date_columns.append(str(col))
         except ValueError:
             logging.warning(f"Ignoring non-date column '{col}' during final sorting and display.")
-
+    
     for col in score_columns:
         total_df[col] = pd.to_numeric(total_df[col], errors='coerce').fillna(0).astype(int)
-        
     total_df['Total Points'] = total_df[score_columns].sum(axis=1).astype(int)
     total_df = total_df.sort_values(by='Total Points', ascending=False)
     
@@ -278,7 +263,6 @@ def update_leaderboard_sheet(tournament_date: str, tournament_points: list, shee
     sorted_date_columns = sorted(date_columns, key=lambda d: datetime.strptime(d, '%d.%m.%Y'))
     final_cols = ['Rank', 'Player'] + sorted_date_columns + ['Total Points']
     total_df = total_df[final_cols]
-
     try:
         worksheet.clear()
         worksheet.update([total_df.columns.values.tolist()] + total_df.values.tolist())
@@ -289,35 +273,26 @@ def update_leaderboard_sheet(tournament_date: str, tournament_points: list, shee
 #endregion
 
 def main():
-    """
-    Main function to parse arguments and run the scraper logic.
-    """
+    """Main function to parse arguments and run the scraper logic for command-line use."""
     parser = argparse.ArgumentParser(description="Extracts and processes tournament results from tspool.fi.", epilog="Example: python tournament_scraper.py 848")
     parser.add_argument("tournament_id", type=int, help="The integer ID of the tournament (e.g., 848).")
     args = parser.parse_args()
     tournament_id = args.tournament_id
-
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-    
     tournament_date = extract_tournament_date(tournament_id, headers=HEADERS)
     if not tournament_date:
         logging.error(f"Could not determine tournament date for ID {tournament_id}. Aborting script.")
         sys.exit(1)
-
     logging.info(f"Processing tournament with ID: {tournament_id}, Date: {tournament_date}")
-
     BRACKET_URL = f"https://tspool.fi/kisa/{tournament_id}/kaavio/"
     RESULTS_URL = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
     TOURNAMENT_CSV_FILENAME = f"tournament_{tournament_id}_{tournament_date.replace('.', '-')}.csv"
-
     final_standings = extract_final_standings(RESULTS_URL, headers=HEADERS, top_n=4)
     if final_standings:
         logging.info("--- Top 4 Final Standings ---")
         for standing in final_standings:
             logging.info(f"Rank {standing['rank']:<3} {standing['player']}")
-    
     match_results = extract_match_data(BRACKET_URL, headers=HEADERS)
-    
     if match_results:
         player_wins = calculate_win_counts(match_results)
         if player_wins:
@@ -326,15 +301,10 @@ def main():
             for player, wins in sorted_wins:
                 win_text = "win" if wins == 1 else "wins"
                 logging.info(f"{player:<25} | {wins} {win_text}")
-        
         if final_standings or player_wins:
             current_tournament_points = calculate_tournament_points(match_results, player_wins, final_standings)
-            
             if current_tournament_points:
                 save_tournament_csv(current_tournament_points, final_standings, TOURNAMENT_CSV_FILENAME)
-                
-                # Note: When run from command line, this script does not have secrets to update the master sheet.
-                # That action is now handled by the Streamlit app.
                 logging.info("Single-tournament CSV saved. To update master leaderboard, use the Streamlit app.")
             else:
                 logging.warning("No player points were calculated for this tournament.")
