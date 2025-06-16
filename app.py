@@ -1,10 +1,7 @@
-# app.py - Combined Leaderboard and Update Tool
-
 import streamlit as st
 import pandas as pd
 import gspread
 import tournament_scraper # Your module
-import sys
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -15,6 +12,7 @@ st.set_page_config(
 
 # --- Constant ---
 GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
+
 
 # --- Data Loading Function (for Homepage) ---
 @st.cache_data(ttl=600)
@@ -31,7 +29,6 @@ def load_leaderboard_data():
         spreadsheet = gc.open(GOOGLE_SHEET_NAME)
         worksheet = spreadsheet.sheet1
         df = pd.DataFrame(worksheet.get_all_records())
-        # Ensure 'Total Points' is numeric
         if 'Total Points' in df.columns:
             df['Total Points'] = pd.to_numeric(df['Total Points'], errors='coerce')
         return df
@@ -76,37 +73,24 @@ def render_update_page():
     """Renders the password-protected update tool."""
     st.title("Update Tournament Data")
 
-    # --- MODIFIED: Use session state for password check ---
+    if not hasattr(st.secrets, "PASSWORD"):
+        st.error("Password is not configured for this app. Please add it to your Streamlit Secrets.")
+        return
+        
+    password = st.text_input("Enter password to access this page", type="password")
     
-    # Initialize session state
-    if 'password_correct' not in st.session_state:
-        st.session_state.password_correct = False
-
-    def password_form():
-        """Form to check for password."""
-        with st.form("password_form"):
-            password = st.text_input("Enter password to access this page", type="password")
-            submitted = st.form_submit_button("Enter")
-            if submitted:
-                if hasattr(st.secrets, "PASSWORD") and password == st.secrets["PASSWORD"]:
-                    st.session_state.password_correct = True
-                    # Use experimental_rerun for wider compatibility
-                    st.experimental_rerun() 
-                else:
-                    st.error("The password you entered is incorrect.")
-
-    # If password is not correct, show the login form and stop.
-    if not st.session_state.password_correct:
-        password_form()
+    if password != st.secrets["PASSWORD"]:
+        if password:
+            st.error("The password you entered is incorrect.")
+        else:
+            st.info("Please enter the password to continue.")
         return
 
-    # If password IS correct, show the main update tool.
     st.success("Authenticated.")
     st.write("---")
 
     with st.form(key='scraper_form'):
         tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1)
-        # MODIFIED: Button text
         submit_button = st.form_submit_button(label='Update tournament points')
 
     if submit_button:
@@ -115,7 +99,7 @@ def render_update_page():
         else:
             try:
                 with st.spinner(f"Processing tournament {tournament_id}..."):
-                    # Step 1: Extract Data
+                    
                     tournament_date = tournament_scraper.extract_tournament_date(tournament_id, headers=tournament_scraper.HEADERS)
                     if not tournament_date:
                         raise ValueError(f"Could not find a valid date for tournament ID {tournament_id}.")
@@ -130,7 +114,6 @@ def render_update_page():
                         st.warning("Could not retrieve any valid match results from the bracket.")
                         return
 
-                    # Step 2: Calculate Points
                     player_wins = tournament_scraper.calculate_win_counts(match_results)
                     points = tournament_scraper.calculate_tournament_points(match_results, player_wins, final_standings)
 
@@ -138,7 +121,6 @@ def render_update_page():
                         st.warning("No player points were calculated for this tournament.")
                         return
                     
-                    # Step 3: Update Leaderboard
                     creds = dict(st.secrets["gcp_service_account"])
                     tournament_scraper.update_leaderboard_sheet(
                         tournament_date=tournament_date,
@@ -148,8 +130,6 @@ def render_update_page():
                     )
                 
                 st.success(f"Leaderboard '{GOOGLE_SHEET_NAME}' updated successfully!")
-                
-                # ADDED: Link back to the main page
                 st.markdown("[Return to Homepage](/)")
 
             except Exception as e:
