@@ -16,9 +16,6 @@ st.set_page_config(
 # --- Constant ---
 GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
-# --- Hide Sidebar CSS ---
-# We no longer need the sidebar hiding CSS as the routing logic handles it.
-
 # --- Data Loading Function (for Homepage) ---
 @st.cache_data(ttl=600)
 def load_leaderboard_data():
@@ -51,38 +48,23 @@ def render_home_page():
     leaderboard_df = load_leaderboard_data()
 
     if leaderboard_df is not None and not leaderboard_df.empty:
-        # Check if the required columns exist before proceeding
         if 'Rank' in leaderboard_df.columns and 'Player' in leaderboard_df.columns:
             
-            # --- MODIFIED: Combine 'Rank' and 'Player' and set as index ---
-            
-            # 1. Create the new combined column
             leaderboard_df['Ranking'] = leaderboard_df['Rank'].astype(str) + '. ' + leaderboard_df['Player'].astype(str)
-            
-            # 2. Drop the old, separate columns
             df_to_display = leaderboard_df.drop(columns=['Rank', 'Player'])
-            
-            # 3. Reorder columns to make 'Ranking' first
             cols = df_to_display.columns.tolist()
             cols = ['Ranking'] + [col for col in cols if col != 'Ranking']
             df_to_display = df_to_display[cols]
-            
-            # 4. Set the new combined column as the index to hide the default index
             df_to_display = df_to_display.set_index('Ranking')
             
-            # --- End of modification ---
-            
-            # Calculate height dynamically
             table_height = (len(df_to_display) + 1) * 35
             
-            # Display the final dataframe
             st.dataframe(
                 df_to_display, 
                 use_container_width=True,
                 height=table_height
             )
         else:
-            # Fallback for if the 'Rank' or 'Player' columns are missing
             st.warning("Leaderboard is missing 'Rank' or 'Player' columns. Displaying raw data.")
             st.dataframe(leaderboard_df, use_container_width=True)
     else:
@@ -94,25 +76,38 @@ def render_update_page():
     """Renders the password-protected update tool."""
     st.title("Update Tournament Data")
 
-    if not hasattr(st.secrets, "PASSWORD"):
-        st.error("Password is not configured for this app. Please add it to your Streamlit Secrets.")
-        return
-        
-    password = st.text_input("Enter password to access this page", type="password")
+    # --- MODIFIED: Use session state for password check ---
     
-    if password != st.secrets["PASSWORD"]:
-        if password:
-            st.error("The password you entered is incorrect.")
-        else:
-            st.info("Please enter the password to continue.")
+    # Initialize session state
+    if 'password_correct' not in st.session_state:
+        st.session_state.password_correct = False
+
+    def password_form():
+        """Form to check for password."""
+        with st.form("password_form"):
+            password = st.text_input("Enter password to access this page", type="password")
+            submitted = st.form_submit_button("Enter")
+            if submitted:
+                if hasattr(st.secrets, "PASSWORD") and password == st.secrets["PASSWORD"]:
+                    st.session_state.password_correct = True
+                    # Use experimental_rerun for wider compatibility
+                    st.experimental_rerun() 
+                else:
+                    st.error("The password you entered is incorrect.")
+
+    # If password is not correct, show the login form and stop.
+    if not st.session_state.password_correct:
+        password_form()
         return
 
-    st.success("Password correct. You can now update a tournament.")
+    # If password IS correct, show the main update tool.
+    st.success("Authenticated.")
     st.write("---")
 
     with st.form(key='scraper_form'):
         tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1)
-        submit_button = st.form_submit_button(label='Run Scraper and Update Leaderboard')
+        # MODIFIED: Button text
+        submit_button = st.form_submit_button(label='Update tournament points')
 
     if submit_button:
         if not tournament_id:
@@ -127,7 +122,7 @@ def render_update_page():
 
                     bracket_url = f"https://tspool.fi/kisa/{tournament_id}/kaavio/"
                     results_url = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
-
+                    
                     final_standings = tournament_scraper.extract_final_standings(results_url, headers=tournament_scraper.HEADERS)
                     match_results = tournament_scraper.extract_match_data(bracket_url, headers=tournament_scraper.HEADERS)
                     
@@ -153,7 +148,9 @@ def render_update_page():
                     )
                 
                 st.success(f"Leaderboard '{GOOGLE_SHEET_NAME}' updated successfully!")
-                st.info("You can now view the updated standings on the main page.")
+                
+                # ADDED: Link back to the main page
+                st.markdown("[Return to Homepage](/)")
 
             except Exception as e:
                 st.error(f"An error occurred during processing:")
@@ -161,10 +158,7 @@ def render_update_page():
 
 
 # --- Main Router ---
-# Use the backward-compatible experimental version to get query params.
 query_params = st.experimental_get_query_params()
-
-# .get() returns a list, so we take the first item, or default to "home".
 page = query_params.get("page", ["home"])[0]
 
 if page == "update":
