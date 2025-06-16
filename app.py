@@ -73,84 +73,102 @@ def render_home_page():
 
 # --- Page 2: Update Tool View ---
 def render_update_page():
-    """Renders the password-protected update tool using session_state."""
+    """Renders the password-protected update tool."""
     st.title("Update Tournament Data")
-
-    # --- REFACTORED: Authentication Logic ---
     
-    # Define a function to display the password form
+    # --- ADDED: Link back to the homepage ---
+    st.markdown("[< Back to Homepage](/)")
+    st.write("---")
+
+    if not hasattr(st.secrets, "PASSWORD"):
+        st.error("Password is not configured for this app. Please add it to your Streamlit Secrets.")
+        return
+        
+    # Use session state to keep the user logged in
+    if 'password_correct' not in st.session_state:
+        st.session_state.password_correct = False
+
     def password_form():
+        """Form to check for password."""
         with st.form("password_form"):
             password = st.text_input("Enter password to access this page", type="password")
             submitted = st.form_submit_button("Enter")
             if submitted:
-                # Check the secret only on submission
-                if hasattr(st.secrets, "PASSWORD") and password == st.secrets["PASSWORD"]:
+                if password == st.secrets["PASSWORD"]:
                     st.session_state.password_correct = True
-                    # Use experimental_rerun for wider compatibility
                     st.experimental_rerun()
                 else:
                     st.error("The password you entered is incorrect.")
 
-    # Main logic for showing content
-    if st.session_state.get('password_correct', False):
-        # If password is correct, show the main tool
-        st.success("Authenticated.")
-        st.write("---")
-
-        with st.form(key='scraper_form'):
-            tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1)
-            submit_button = st.form_submit_button(label='Update tournament points')
-
-        if submit_button:
-            if not tournament_id:
-                st.warning("Please enter a valid Tournament ID.")
-            else:
-                try:
-                    with st.spinner(f"Processing tournament {tournament_id}..."):
-                        tournament_date = tournament_scraper.extract_tournament_date(tournament_id, headers=tournament_scraper.HEADERS)
-                        if not tournament_date:
-                            raise ValueError(f"Could not find a valid date for tournament ID {tournament_id}.")
-
-                        bracket_url = f"https://tspool.fi/kisa/{tournament_id}/kaavio/"
-                        results_url = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
-                        
-                        final_standings = tournament_scraper.extract_final_standings(results_url, headers=tournament_scraper.HEADERS)
-                        match_results = tournament_scraper.extract_match_data(bracket_url, headers=tournament_scraper.HEADERS)
-                        
-                        if not match_results:
-                            st.warning("Could not retrieve any valid match results from the bracket.")
-                            return
-
-                        player_wins = tournament_scraper.calculate_win_counts(match_results)
-                        points = tournament_scraper.calculate_tournament_points(match_results, player_wins, final_standings)
-
-                        if not points:
-                            st.warning("No player points were calculated for this tournament.")
-                            return
-                        
-                        creds = dict(st.secrets["gcp_service_account"])
-                        tournament_scraper.update_leaderboard_sheet(
-                            tournament_date=tournament_date,
-                            tournament_points=points,
-                            sheet_name=GOOGLE_SHEET_NAME,
-                            creds=creds
-                        )
-                    
-                    st.success(f"Leaderboard '{GOOGLE_SHEET_NAME}' updated successfully!")
-                    st.markdown("[Return to Homepage](/)")
-
-                except Exception as e:
-                    st.error(f"An error occurred during processing:")
-                    st.error(e)
-    else:
-        # If password is not correct, show the login form
+    if not st.session_state.password_correct:
         st.info("Please enter the password to access the update tool.")
         password_form()
+        return
+
+    st.success("Authenticated.")
+    
+    with st.form(key='scraper_form'):
+        tournament_id = st.number_input("Enter Tournament ID:", min_value=1, step=1)
+        submit_button = st.form_submit_button(label='Update tournament points')
+
+    if submit_button:
+        if not tournament_id:
+            st.warning("Please enter a valid Tournament ID.")
+        else:
+            try:
+                with st.spinner(f"Checking tournament {tournament_id}..."):
+                    creds = dict(st.secrets["gcp_service_account"])
+                    
+                    tournament_date = tournament_scraper.extract_tournament_date(tournament_id, headers=tournament_scraper.HEADERS)
+                    if not tournament_date:
+                        raise ValueError(f"Could not find a valid date for tournament ID {tournament_id}.")
+
+                    gc = gspread.service_account_from_dict(creds)
+                    spreadsheet = gc.open(GOOGLE_SHEET_NAME)
+                    worksheet = spreadsheet.sheet1
+                    header_row = worksheet.row_values(1)
+
+                    if tournament_date in header_row:
+                        st.warning(f"This tournament (Date: {tournament_date}) already exists in the leaderboard. No action taken.")
+                        return
+                    
+                    st.info(f"Tournament date {tournament_date} is new. Proceeding with full data extraction...")
+
+                with st.spinner(f"Processing tournament {tournament_id}..."):
+                    bracket_url = f"https://tspool.fi/kisa/{tournament_id}/kaavio/"
+                    results_url = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
+                    
+                    final_standings = tournament_scraper.extract_final_standings(results_url, headers=tournament_scraper.HEADERS)
+                    match_results = tournament_scraper.extract_match_data(bracket_url, headers=tournament_scraper.HEADERS)
+                    
+                    if not match_results:
+                        st.warning("Could not retrieve any valid match results from the bracket.")
+                        return
+
+                    player_wins = tournament_scraper.calculate_win_counts(match_results)
+                    points = tournament_scraper.calculate_tournament_points(match_results, player_wins, final_standings)
+
+                    if not points:
+                        st.warning("No player points were calculated for this tournament.")
+                        return
+                    
+                    st.info("Updating master leaderboard on Google Sheets...")
+                    tournament_scraper.update_leaderboard_sheet(
+                        tournament_date=tournament_date,
+                        tournament_points=points,
+                        sheet_name=GOOGLE_SHEET_NAME,
+                        creds=creds
+                    )
+                
+                st.success(f"Leaderboard '{GOOGLE_SHEET_NAME}' updated successfully!")
+                st.markdown("[Return to Homepage](/)")
+
+            except Exception as e:
+                st.error(f"An error occurred during processing:")
+                st.error(e)
 
 
 # --- Main Router ---
-# Use the backward-compatible experimental version to get query params.
 query_params = st.experimental_get_query_params()
 page = query_params.get("page", ["home"])[0]
 
