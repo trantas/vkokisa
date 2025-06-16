@@ -7,7 +7,6 @@ import tournament_scraper # Your module
 import sys
 
 # --- Page Configuration ---
-# This is the only call to set_page_config and it's at the top.
 st.set_page_config(
     page_title="Pocket Viikkokisat '25",
     page_icon="🎱",
@@ -18,7 +17,7 @@ st.set_page_config(
 GOOGLE_SHEET_NAME = "pocket viikkokisa leaderboard"
 
 # --- Hide Sidebar CSS ---
-# We no longer need the sidebar hiding CSS as there is only one page file.
+# We no longer need the sidebar hiding CSS as the routing logic handles it.
 
 # --- Data Loading Function (for Homepage) ---
 @st.cache_data(ttl=600)
@@ -35,7 +34,6 @@ def load_leaderboard_data():
         spreadsheet = gc.open(GOOGLE_SHEET_NAME)
         worksheet = spreadsheet.sheet1
         df = pd.DataFrame(worksheet.get_all_records())
-        # Ensure 'Total Points' is numeric
         if 'Total Points' in df.columns:
             df['Total Points'] = pd.to_numeric(df['Total Points'], errors='coerce')
         return df
@@ -92,48 +90,49 @@ def render_update_page():
         if not tournament_id:
             st.warning("Please enter a valid Tournament ID.")
         else:
-            with st.status(f"Processing tournament {tournament_id}...", expanded=True) as status:
-                st.write("Step 1: Extracting Data...")
-                tournament_date = tournament_scraper.extract_tournament_date(tournament_id, headers=tournament_scraper.HEADERS)
-                if not tournament_date:
-                    status.update(label="Error!", state="error", expanded=True)
-                    st.error(f"Could not find a valid date for tournament ID {tournament_id}.")
-                    return
+            # --- REWRITTEN LOGIC with st.spinner ---
+            try:
+                with st.spinner(f"Processing tournament {tournament_id}... Please wait."):
+                    # Step 1: Extract Data
+                    tournament_date = tournament_scraper.extract_tournament_date(tournament_id, headers=tournament_scraper.HEADERS)
+                    if not tournament_date:
+                        raise ValueError(f"Could not find a valid date for tournament ID {tournament_id}.")
 
-                st.write(f"Found tournament date: {tournament_date}")
-                bracket_url = f"https://tspool.fi/kisa/{tournament_id}/kaavio/"
-                results_url = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
+                    bracket_url = f"https://tspool.fi/kisa/{tournament_id}/kaavio/"
+                    results_url = f"https://tspool.fi/kisa/{tournament_id}/tulokset/"
 
-                final_standings = tournament_scraper.extract_final_standings(results_url, headers=tournament_scraper.HEADERS)
-                match_results = tournament_scraper.extract_match_data(bracket_url, headers=tournament_scraper.HEADERS)
+                    final_standings = tournament_scraper.extract_final_standings(results_url, headers=tournament_scraper.HEADERS)
+                    match_results = tournament_scraper.extract_match_data(bracket_url, headers=tournament_scraper.HEADERS)
+                    
+                    if not match_results:
+                        st.warning("Could not retrieve any valid match results from the bracket.")
+                        return
 
-                st.write("Step 2: Calculating Points...")
-                if match_results:
+                    # Step 2: Calculate Points
                     player_wins = tournament_scraper.calculate_win_counts(match_results)
                     points = tournament_scraper.calculate_tournament_points(match_results, player_wins, final_standings)
+
+                    if not points:
+                        st.warning("No player points were calculated for this tournament.")
+                        return
                     
-                    if points:
-                        st.write("Step 3: Updating Master Leaderboard on Google Sheets...")
-                        try:
-                            creds = dict(st.secrets["gcp_service_account"])
-                            tournament_scraper.update_leaderboard_sheet(
-                                tournament_date=tournament_date,
-                                tournament_points=points,
-                                sheet_name=GOOGLE_SHEET_NAME,
-                                creds=creds
-                            )
-                            status.update(label="Process Complete!", state="complete", expanded=False)
-                            st.success(f"Leaderboard '{GOOGLE_SHEET_NAME}' updated successfully!")
-                            st.info("You can now view the updated standings on the main page.")
-                        except Exception as e:
-                            status.update(label="Error!", state="error", expanded=True)
-                            st.error(f"Failed to update Google Sheets: {e}")
-                    else:
-                        status.update(label="Warning", state="warning", expanded=True)
-                        st.warning("No player points were calculated.")
-                else:
-                    status.update(label="Warning", state="warning", expanded=True)
-                    st.warning("Could not retrieve any valid match results.")
+                    # Step 3: Update Leaderboard
+                    creds = dict(st.secrets["gcp_service_account"])
+                    tournament_scraper.update_leaderboard_sheet(
+                        tournament_date=tournament_date,
+                        tournament_points=points,
+                        sheet_name=GOOGLE_SHEET_NAME,
+                        creds=creds
+                    )
+                
+                # If the 'with' block completes without error, show success message.
+                st.success(f"Leaderboard '{GOOGLE_SHEET_NAME}' updated successfully!")
+                st.info("You can now view the updated standings on the main page.")
+
+            except Exception as e:
+                # If any step in the 'try' block fails, show the error.
+                st.error(f"An error occurred during processing:")
+                st.error(e)
 
 
 # --- Main Router ---
