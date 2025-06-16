@@ -34,6 +34,7 @@ def load_leaderboard_data():
         spreadsheet = gc.open(GOOGLE_SHEET_NAME)
         worksheet = spreadsheet.sheet1
         df = pd.DataFrame(worksheet.get_all_records())
+        # Ensure 'Total Points' is numeric
         if 'Total Points' in df.columns:
             df['Total Points'] = pd.to_numeric(df['Total Points'], errors='coerce')
         return df
@@ -50,12 +51,39 @@ def render_home_page():
     leaderboard_df = load_leaderboard_data()
 
     if leaderboard_df is not None and not leaderboard_df.empty:
-        if 'Rank' in leaderboard_df.columns:
-            df_to_display = leaderboard_df.set_index('Rank')
+        # Check if the required columns exist before proceeding
+        if 'Rank' in leaderboard_df.columns and 'Player' in leaderboard_df.columns:
+            
+            # --- MODIFIED: Combine 'Rank' and 'Player' and set as index ---
+            
+            # 1. Create the new combined column
+            leaderboard_df['Ranking'] = leaderboard_df['Rank'].astype(str) + '. ' + leaderboard_df['Player'].astype(str)
+            
+            # 2. Drop the old, separate columns
+            df_to_display = leaderboard_df.drop(columns=['Rank', 'Player'])
+            
+            # 3. Reorder columns to make 'Ranking' first
+            cols = df_to_display.columns.tolist()
+            cols = ['Ranking'] + [col for col in cols if col != 'Ranking']
+            df_to_display = df_to_display[cols]
+            
+            # 4. Set the new combined column as the index to hide the default index
+            df_to_display = df_to_display.set_index('Ranking')
+            
+            # --- End of modification ---
+            
+            # Calculate height dynamically
             table_height = (len(df_to_display) + 1) * 35
-            st.dataframe(df_to_display, use_container_width=True, height=table_height)
+            
+            # Display the final dataframe
+            st.dataframe(
+                df_to_display, 
+                use_container_width=True,
+                height=table_height
+            )
         else:
-            st.warning("Leaderboard is missing 'Rank' column. Displaying raw data.")
+            # Fallback for if the 'Rank' or 'Player' columns are missing
+            st.warning("Leaderboard is missing 'Rank' or 'Player' columns. Displaying raw data.")
             st.dataframe(leaderboard_df, use_container_width=True)
     else:
         st.warning("Leaderboard data could not be loaded or is empty.")
@@ -90,9 +118,8 @@ def render_update_page():
         if not tournament_id:
             st.warning("Please enter a valid Tournament ID.")
         else:
-            # --- REWRITTEN LOGIC with st.spinner ---
             try:
-                with st.spinner(f"Processing tournament {tournament_id}... Please wait."):
+                with st.spinner(f"Processing tournament {tournament_id}..."):
                     # Step 1: Extract Data
                     tournament_date = tournament_scraper.extract_tournament_date(tournament_id, headers=tournament_scraper.HEADERS)
                     if not tournament_date:
@@ -125,12 +152,10 @@ def render_update_page():
                         creds=creds
                     )
                 
-                # If the 'with' block completes without error, show success message.
                 st.success(f"Leaderboard '{GOOGLE_SHEET_NAME}' updated successfully!")
                 st.info("You can now view the updated standings on the main page.")
 
             except Exception as e:
-                # If any step in the 'try' block fails, show the error.
                 st.error(f"An error occurred during processing:")
                 st.error(e)
 
