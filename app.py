@@ -76,7 +76,6 @@ def render_update_page():
     """Renders the password-protected update tool."""
     st.title("Update Tournament Data")
     
-    # --- ADDED: Link back to the homepage ---
     st.markdown("[< Back to Homepage](/)")
     st.write("---")
 
@@ -96,7 +95,7 @@ def render_update_page():
             if submitted:
                 if password == st.secrets["PASSWORD"]:
                     st.session_state.password_correct = True
-                    st.experimental_rerun()
+                    st.rerun() # Use the modern rerun command
                 else:
                     st.error("The password you entered is incorrect.")
 
@@ -169,8 +168,14 @@ def render_update_page():
 
 
 # --- Main Router ---
-query_params = st.experimental_get_query_params()
-page = query_params.get("page", ["home"])[0]
+
+# --- MODIFIED: Use the new, official st.query_params ---
+# The old way:
+# query_params = st.experimental_get_query_params()
+# page = query_params.get("page", ["home"])[0]
+
+# The new, cleaner way:
+page = st.query_params.get("page", "home")
 
 if page == "update":
     render_update_page()
